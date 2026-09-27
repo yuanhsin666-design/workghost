@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能动态排班管理设置 (表格贴上解析版)</title>
+    <title>智能动态排班管理设置 (云端连结自動解析版)</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Supabase JS Client -->
@@ -21,7 +21,7 @@
                 <span class="text-3xl">⚙️</span>
                 <div>
                     <h1 class="text-2xl font-bold">智能动态排班管理设置</h1>
-                    <p class="text-xs text-indigo-200 mt-1">支援贴上试算表假表，自动对应员工与日期锁定休假</p>
+                    <p class="text-xs text-indigo-200 mt-1">支援云端假表连结自动抓取、员工锁定与自建岗位</p>
                 </div>
             </div>
             <div id="sync-status" class="text-xs bg-indigo-500 text-white px-4 py-2 rounded-full font-medium shadow-inner">
@@ -29,84 +29,83 @@
             </div>
         </header>
 
-        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <!-- 左侧控制面板 -->
-            <div class="space-y-6">
-                <!-- 月份与排班控制 -->
-                <div class="bg-white shadow rounded-2xl p-5 space-y-4">
-                    <h2 class="font-bold text-slate-700 text-sm flex items-center gap-2">📅 选择排班月份</h2>
+        <!-- 控制面板区块 -->
+        <div class="bg-white shadow rounded-2xl p-6 space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-center border-b border-slate-100 pb-6">
+                <!-- 选择月份 -->
+                <div>
+                    <label class="block font-bold text-slate-700 text-sm mb-1">📅 选择排班月份：</label>
                     <input type="month" id="month-select" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" value="2026-10">
-                    <button onclick="autoSchedule()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl text-sm font-medium transition shadow-sm">
-                        ✨ 一键智能排班
-                    </button>
-                    <button onclick="clearMonthLeaves()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium transition">
-                        重置当月资料
-                    </button>
                 </div>
 
-                <!-- 员工名单管理 -->
-                <div class="bg-white shadow rounded-2xl p-5 space-y-4">
-                    <div class="flex justify-between items-center">
-                        <h2 class="font-bold text-slate-700 text-sm flex items-center gap-2">👥 员工名单</h2>
-                        <span id="employee-count" class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold">0 人</span>
-                    </div>
-                    <div class="flex gap-2">
-                        <input type="text" id="new-employee-name" placeholder="输入员工姓名..." class="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <button onclick="addEmployee()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-medium transition">新增</button>
-                    </div>
-                    <div id="employee-list-container" class="space-y-2 max-h-40 overflow-y-auto text-sm">
-                        <!-- 动态生成员工 -->
-                    </div>
-                </div>
-
-                <!-- 岗位管理 (自建岗位) -->
-                <div class="bg-white shadow rounded-2xl p-5 space-y-4">
-                    <div class="flex justify-between items-center">
-                        <h2 class="font-bold text-slate-700 text-sm flex items-center gap-2">🏷️ 岗位管理</h2>
-                        <span id="shift-count" class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold">0 个</span>
-                    </div>
-                    <div class="space-y-2">
-                        <textarea id="new-shift-name" placeholder="输入岗位名称 (可换行输入多个)..." rows="2" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
-                        <button onclick="addShifts()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl text-sm font-medium transition">新增岗位</button>
-                    </div>
-                    <div id="shift-list-container" class="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto text-xs">
-                        <!-- 动态生成岗位 -->
+                <!-- 员工管理 -->
+                <div class="md:col-span-2">
+                    <label class="block font-bold text-slate-700 text-sm mb-1">👥 员工管理：</label>
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <input type="text" id="new-employee-name" placeholder="输入员工姓名..." class="border border-slate-300 rounded-xl px-3 py-2 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <button onclick="addEmployee()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition">添加</button>
+                        <button onclick="removeSelectedEmployee()" class="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-xl text-sm font-medium transition">移除选中</button>
+                        <select id="employee-select-target" class="border border-slate-300 rounded-xl px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="">-- 选择要管理的员工 --</option>
+                        </select>
                     </div>
                 </div>
             </div>
 
-            <!-- 右侧排班与云端假表设定 -->
-            <div class="lg:col-span-3 space-y-6">
-                <!-- 贴上假表区 -->
-                <div class="bg-white shadow rounded-2xl p-6 space-y-3 border-2 border-indigo-100">
-                    <label class="block font-bold text-slate-700 text-sm">📥 汇入员工自排假表（直接将 Excel / 网页表格复制并贴在下方）：</label>
-                    <textarea id="paste-sheet-data" placeholder="请直接将试算表范围（包含姓名与 1~31 天的假表数据）复制并贴到这里..." rows="4" 
-                        class="w-full border border-slate-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"></textarea>
-                    <div class="flex flex-wrap items-center justify-between gap-3">
-                        <p class="text-xs text-slate-500">💡 提示：从 Google Sheets 或 Excel 直接反白复制表格贴上即可，系统会自动抓取员工姓名与有填写数字的休假日期并锁定！</p>
-                        <div class="flex gap-2">
-                            <button onclick="importPastedLeaves()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-sm font-medium transition shadow-sm whitespace-nowrap">
-                                🟢 解析并锁定假表
-                            </button>
-                            <button onclick="clearMonthLeaves()" class="bg-rose-500 hover:bg-rose-600 text-white px-5 py-2 rounded-xl text-sm font-medium transition shadow-sm whitespace-nowrap">
-                                🗑️ 清空当月休假
-                            </button>
-                        </div>
-                    </div>
+            <!-- 导入云端假表连结 -->
+            <div class="space-y-2 border-b border-slate-100 pb-6">
+                <label class="block font-bold text-slate-700 text-sm">📥 导入当前月份的云端假表连结 (Google Sheets)：</label>
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <input type="text" id="cloud-sheet-url" placeholder="请贴上云端 Google Sheets 共用连结..." 
+                        class="flex-1 border border-slate-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <button onclick="importCloudLeaves()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-sm font-medium transition shadow-sm whitespace-nowrap">
+                        🟢 抓取当月休假日
+                    </button>
+                    <button onclick="clearMonthLeaves()" class="bg-rose-500 hover:bg-rose-600 text-white px-5 py-2 rounded-xl text-sm font-medium transition shadow-sm whitespace-nowrap">
+                        🗑️ 清空当月休假
+                    </button>
                 </div>
+                <p class="text-xs text-slate-400">💡 提示：系统会自动读取该云端表格，并**只会抓取网页上方已建立的员工名字**所对应的休假日期进行锁定！</p>
+            </div>
 
-                <!-- 排班工作表预览 -->
-                <div class="bg-white shadow rounded-2xl p-6">
-                    <div class="flex justify-between items-center mb-4 pb-4 border-b border-slate-100">
-                        <h2 id="table-title" class="font-bold text-slate-800 text-lg">📊 排班与岗位工作表预览</h2>
-                        <span class="text-xs text-slate-500">🔒 锁定状态：员工自排休假无法更改</span>
-                    </div>
-                    <div class="overflow-x-auto min-h-[400px]">
-                        <table id="schedule-table" class="w-full text-left border-collapse">
-                            <!-- 动态生成 -->
-                        </table>
-                    </div>
+            <!-- 岗位与强度设置 -->
+            <div class="space-y-3">
+                <label class="block font-bold text-slate-700 text-sm">🏷️ 岗位与强度设置：</label>
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <input type="text" id="new-shift-name" placeholder="输入岗位名称 (换行用 \n)" class="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <select id="new-shift-intensity" class="border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="中">🟡 中强度</option>
+                        <option value="低">🟢 低强度</option>
+                        <option value="高">🔴 高强度</option>
+                    </select>
+                    <button onclick="addShifts()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl text-sm font-medium transition whitespace-nowrap">添加岗位</button>
                 </div>
+                <div id="shift-list-container" class="flex flex-wrap gap-2 pt-2">
+                    <!-- 动态生成自建岗位标签 -->
+                </div>
+            </div>
+
+            <!-- 操作按钮列 -->
+            <div class="flex flex-wrap gap-3 pt-2">
+                <button onclick="autoSchedule()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition shadow-sm">
+                    ✨ 执行智能排班
+                </button>
+                <button onclick="clearMonthData()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-medium transition">
+                    重置当月资料
+                </button>
+            </div>
+        </div>
+
+        <!-- 排班工作表预览 -->
+        <div class="bg-white shadow rounded-2xl p-6 space-y-4">
+            <div class="flex justify-between items-center border-b border-slate-100 pb-4">
+                <h2 id="table-title" class="font-bold text-slate-800 text-lg">📊 排班工作表预览</h2>
+                <span class="text-xs text-slate-500">🔒 锁定状态：云端读取之员工休假无法更改</span>
+            </div>
+            <div class="overflow-x-auto min-h-[400px]">
+                <table id="schedule-table" class="w-full text-left border-collapse">
+                    <!-- 动态生成 -->
+                </table>
             </div>
         </div>
     </div>
@@ -119,15 +118,20 @@
         const _supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         let employees = [];
-        let shifts = ['休'];
+        let shifts = [
+            { name: '休', intensity: '低' },
+            { name: 'OL FB JY', intensity: '中' },
+            { name: 'MT XO SH YS', intensity: '中' },
+            { name: '支援', intensity: '低' }
+        ];
         let currentSchedules = {};
 
         async function init() {
             updateSyncStatus('连线中...', 'bg-amber-500 text-white');
             await loadEmployees();
-            await loadShifts();
+            loadShiftsLocal();
             await loadSchedulesFromCloud();
-            renderEmployeeList();
+            renderEmployeeSelect();
             renderShiftList();
             renderTable();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
@@ -139,6 +143,7 @@
             badge.innerText = text;
         }
 
+        // 员工管理
         async function loadEmployees() {
             const { data } = await _supabase.from('employees').select('*').order('created_at', { ascending: true });
             employees = data ? data.map(item => item.name) : [];
@@ -154,85 +159,87 @@
             await _supabase.from('employees').insert([{ name }]);
             input.value = '';
             await loadEmployees();
-            renderEmployeeList();
+            renderEmployeeSelect();
             renderTable();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
         }
 
-        async function removeEmployee(name) {
-            if (!confirm(`确定移除员工「${name}」？`)) return;
+        async function removeSelectedEmployee() {
+            const select = document.getElementById('employee-select-target');
+            const name = select.value;
+            if (!name) { alert('请先在下拉选单选择要移除的员工！'); return; }
+            if (!confirm(`确定要移除员工「${name}」吗？`)) return;
+
             updateSyncStatus('同步中...', 'bg-amber-500 text-white');
             await _supabase.from('employees').delete().eq('name', name);
             await _supabase.from('schedules').delete().eq('employee', name);
             await loadEmployees();
             await loadSchedulesFromCloud();
-            renderEmployeeList();
+            renderEmployeeSelect();
             renderTable();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
         }
 
-        function renderEmployeeList() {
-            const container = document.getElementById('employee-list-container');
-            document.getElementById('employee-count').innerText = `${employees.length} 人`;
-            if (employees.length === 0) {
-                container.innerHTML = '<div class="text-xs text-slate-400 text-center py-2">尚无员工</div>';
-                return;
-            }
-            let html = '';
+        function renderEmployeeSelect() {
+            const select = document.getElementById('employee-select-target');
+            let html = '<option value="">-- 选择要管理的员工 (' + employees.length + '人) --</option>';
             employees.forEach(emp => {
-                html += `<div class="flex justify-between items-center bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
-                    <span class="font-medium text-slate-700">${emp}</span>
-                    <button onclick="removeEmployee('${emp}')" class="text-rose-500 hover:text-rose-700 text-xs font-bold">✕</button>
-                </div>`;
+                html += `<option value="${emp}">${emp}</option>`;
             });
-            container.innerHTML = html;
+            select.innerHTML = html;
         }
 
-        async function loadShifts() {
-            const saved = localStorage.getItem('workghost_custom_shifts');
-            shifts = saved ? JSON.parse(saved) : ['休', '早班', '晚班', '支援'];
+        // 岗位管理
+        function loadShiftsLocal() {
+            const saved = localStorage.getItem('workghost_custom_shifts_v2');
+            if (saved) shifts = JSON.parse(saved);
         }
-
-        function saveShifts() {
-            localStorage.setItem('workghost_custom_shifts', JSON.stringify(shifts));
+        function saveShiftsLocal() {
+            localStorage.setItem('workghost_custom_shifts_v2', JSON.stringify(shifts));
         }
 
         function addShifts() {
             const input = document.getElementById('new-shift-name');
+            const intensity = document.getElementById('new-shift-intensity').value;
             const text = input.value.trim();
             if (!text) return;
-            const newItems = text.split('\n').map(s => s.trim()).filter(s => s && !shifts.includes(s));
-            if (newItems.length > 0) {
-                shifts.push(...newItems);
-                saveShifts();
-                input.value = '';
-                renderShiftList();
-                renderTable();
-                alert('成功新增岗位！');
-            }
+
+            const names = text.split('\n').map(s => s.trim()).filter(s => s);
+            names.forEach(name => {
+                if (!shifts.some(s => s.name === name)) {
+                    shifts.push({ name, intensity });
+                }
+            });
+            saveShiftsLocal();
+            input.value = '';
+            renderShiftList();
+            renderTable();
+            alert('成功添加岗位！');
         }
 
-        function removeShift(shiftName) {
-            if (shiftName === '休') { alert('「休」无法删除！'); return; }
-            if (!confirm(`确定移除岗位「${shiftName}」？`)) return;
-            shifts = shifts.filter(s => s !== shiftName);
-            saveShifts();
+        function removeShift(name) {
+            if (name === '休') { alert('「休」为必要选项，无法删除！'); return; }
+            if (!confirm(`确定删除岗位「${name}」？`)) return;
+            shifts = shifts.filter(s => s.name !== name);
+            saveShiftsLocal();
             renderShiftList();
             renderTable();
         }
 
         function renderShiftList() {
             const container = document.getElementById('shift-list-container');
-            document.getElementById('shift-count').innerText =`${shifts.length} 个`;
             let html = '';
             shifts.forEach(s => {
-                html += `<span class="bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-1 rounded-lg flex items-center gap-1 font-medium">
-                    ${s} ${s !== '休' ? `<button onclick="removeShift('${s}')" class="text-rose-500 hover:text-rose-700 font-bold ml-1">×</button>` : ''}
+                const bg = s.intensity === '高' ? 'bg-rose-50 border-rose-200 text-rose-700' : (s.intensity === '中' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-emerald-500 text-white');
+                html += `<span class="${bg} border px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 shadow-sm">
+                    <span>${s.intensity === '高' ? '🔴' : (s.intensity === '中' ? '🟡' : '🟢')} ${s.name}</span>
+                    ${s.name !== '休' ? `<button onclick="removeShift('${s.name}')" class="font-bold ml-1 hover:text-black">×</button>` : ''}
                 </span>`;
             });
             container.innerHTML = html;
         }
 
+        // 读取与储存排班资料
         async function loadSchedulesFromCloud() {
             const monthKey = document.getElementById('month-select').value;
             const { data } = await _supabase.from('schedules').select('*').eq('month_key', monthKey);
@@ -249,11 +256,11 @@
             const [year, month] = monthKey.split('-').map(Number);
             const daysInMonth = new Date(year, month, 0).getDate();
 
-            document.getElementById('table-title').innerText = `📊 ${year}年${month}月 排班与岗位工作表预览`;
+            document.getElementById('table-title').innerText = `📊 ${year}年${month}月 排班工作表预览`;
 
             const table = document.getElementById('schedule-table');
             if (employees.length === 0) {
-                table.innerHTML = '<tr><td colspan="32" class="text-center py-12 text-slate-400 text-sm">请先在左侧新增员工，即可开始排班与分配岗位！</td></tr>';
+                table.innerHTML = '<tr><td colspan="32" class="text-center py-12 text-slate-400 text-sm">请先上方添加员工，即可开始排班！</td></tr>';
                 return;
             }
 
@@ -276,18 +283,17 @@
                     const key = `${emp}_${dateStr}`;
                     const shift = currentSchedules[key] || '';
                     
-                    const isLocked = (shift === '休(固定)');
+                    const isLocked = (shift === '休(固定)' || shift === '休');
 
                     if (isLocked) {
-                        html += `<td class="p-2 text-center bg-rose-50 text-rose-700 font-bold text-xs whitespace-nowrap" title="员工自排休假，无法更改">休(固定)</td>`;
+                        html += `<td class="p-2 text-center bg-rose-50 text-rose-700 font-bold text-xs whitespace-nowrap" title="云端读取之员工休假，无法更改">🔒 休</td>`;
                     } else {
                         html += `<td class="p-2 text-center">
                             <select onchange="handleShiftChange('${emp}', '${dateStr}', this.value)" class="w-full text-center bg-transparent border border-slate-200 rounded p-1 text-xs focus:ring-2 focus:ring-indigo-500">
                                 <option value="" ${shift === '' ? 'selected' : ''}>-</option>`;
                         shifts.forEach(s => {
-                            const val = (s === '休') ? '休' : s;
-                            const selected = (shift === val) ? 'selected' : '';
-                            html += `<option value="${val}" ${selected}>${s}</option>`;
+                            const selected = (shift === s.name) ? 'selected' : '';
+                            html += `<option value="${s.name}" ${selected}>${s.name}</option>`;
                         });
                         html += `</select></td>`;
                     }
@@ -316,34 +322,49 @@
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
         }
 
-        // 智慧解析贴上的试算表假表文字
-        async function importPastedLeaves() {
-            const rawText = document.getElementById('paste-sheet-data').value.trim();
-            if (!rawText) { alert('请先将假表范围复制并贴上！'); return; }
-            if (employees.length === 0) { alert('请先在左侧建立员工名单！'); return; }
+        // 核心：抓取云端假表连结，自动过滤并读取网页中已输入的员工姓名休假
+        async function importCloudLeaves() {
+            const rawUrl = document.getElementById('cloud-sheet-url').value.trim();
+            if (!rawUrl) { alert('请先贴上云端假表连结！'); return; }
+            if (employees.length === 0) { alert('请先上方添加员工名单！'); return; }
 
-            const monthKey = document.getElementById('month-select').value;
-            const lines = rawText.split('\n');
-            let batchData = [];
+            // 将 Google Sheets 连结转换为 CSV 汇出格式以供网页直接读取
+            let csvUrl = rawUrl;
+            if (rawUrl.includes('/edit')) {
+                csvUrl = rawUrl.split('/edit')[0] + '/export?format=csv';
+            }
 
-            updateSyncStatus('解析假表中...', 'bg-amber-500 text-white');
+            updateSyncStatus('读取云端假表中...', 'bg-amber-500 text-white');
 
-            // 逐行解析贴上的表格资料
-            lines.forEach(line => {
-                const cols = line.split('\t'); // 试算表复制贴上通常以 Tab 分隔栏位
-                if (cols.length < 2) return;
+            try {
+                const response = await fetch(csvUrl);
+                if (!response.ok) throw new Error('无法读取该连结，请确认该 Google 试算表权限是否已设为「知道连结的人都能检视」！');
+                const csvText = await response.text();
+                
+                const lines = csvText.split('\n');
+                const monthKey = document.getElementById('month-select').value;
+                const [year, month] = monthKey.split('-').map(Number);
+                const daysInMonth = new Date(year, month, 0).getDate();
 
-                const rowName = cols[0].trim();
-                // 检查这一行是否属于我们建立的员工名单之一
-                if (employees.includes(rowName)) {
-                    // 从第 2 个栏位开始检查每个日期（对应 1 号到 31 号）
-                    for (let i = 1; i < cols.length; i++) {
-                        const cellValue = cols[i].trim();
-                        // 如果格子里面有填数字（例如 '1'）代表该天休假
-                        if (cellValue !== '' && !isNaN(cellValue)) {
-                            const dayNum = i; // 假设第 1 列是姓名，第 2 列是 1 日...
-                            if (dayNum >= 1 && dayNum <= 31) {
-                                const dayStr = String(dayNum).padStart(2, '0');
+                let batchData = [];
+                let matchCount = 0;
+
+                lines.forEach(line => {
+                    // 简单的 CSV 解析
+                    const cols = line.split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
+                    if (cols.length < 2) return;
+
+                    const rowName = cols[0];
+                    // **关键逻辑：只读取网页上已输入的员工名字**
+                    if (employees.includes(rowName)) {
+                        matchCount++;
+                        // 从第 2 个栏位开始对应日期（1号到31号）
+                        for (let d = 1; d <= daysInMonth; d++) {
+                            // 寻找对应日期的栏位值（假设表格结构为 姓名, 日1, 日2... 或包含日期标题）
+                            // 检查有填数字（如 1）或标注休假的格子
+                            const cellVal = cols[d] !== undefined ? cols[d] : '';
+                            if (cellVal !== '' && (cellVal === '1' || cellVal.includes('休') || cellVal.toLowerCase() === 'true')) {
+                                const dayStr = String(d).padStart(2, '0');
                                 const dateStr = `${monthKey}-${dayStr}`;
                                 batchData.push({
                                     month_key: monthKey,
@@ -354,37 +375,41 @@
                             }
                         }
                     }
+                });
+
+                if (batchData.length === 0) {
+                    alert(`成功比对到 ${matchCount} 位员工，但在表格中未找到休假标记！请确认表格中的休假是用「1」或其他标记标示。`);
+                    updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+                    return;
                 }
-            });
 
-            if (batchData.length === 0) {
-                alert('解析失败：未在贴上的内容中找到相符的员工姓名或假表数据，请确认是否包含员工姓名与填入的休假数字！');
+                const { error } = await _supabase.from('schedules').upsert(batchData, { onConflict: 'employee,date_str' });
+                if (error) { alert('写入假表失败: ' + error.message); return; }
+
+                await loadSchedulesFromCloud();
+                renderTable();
                 updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-                return;
+                alert(`成功抓取云端假表！已为网页中存在的员工锁定 ${batchData.length} 笔休假。`);
+
+            } catch (err) {
+                alert('抓取失败: ' + err.message + '\n\n提示：请确认 Google 试算表已开启共用权限（知道连结即可检视）。');
+                updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
             }
-
-            const { error } = await _supabase.from('schedules').upsert(batchData, { onConflict: 'employee,date_str' });
-            if (error) { alert('写入假表失败: ' + error.message); return; }
-
-            await loadSchedulesFromCloud();
-            renderTable();
-            updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-            alert(`成功解析并锁定 ${batchData.length 筆} 员工自排休假！`);
         }
 
         async function autoSchedule() {
-            if (employees.length === 0) { alert('请先新增至少一位员工！'); return; }
-            if (shifts.length <= 1) { alert('请先新增至少一个岗位！'); return; }
+            if (employees.length === 0) { alert('请先添加至少一位员工！'); return; }
+            if (shifts.length <= 1) { alert('请先添加岗位！'); return; }
             if (!confirm('确定要执行一键智能排班吗？')) return;
 
             const monthKey = document.getElementById('month-select').value;
             const [year, month] = monthKey.split('-').map(Number);
             const daysInMonth = new Date(year, month, 0).getDate();
 
-            updateSyncStatus('岗位运算中...', 'bg-amber-500 text-white');
+            updateSyncStatus('排班运算中...', 'bg-amber-500 text-white');
 
             let batchData = [];
-            const availableShifts = shifts.filter(s => s !== '休');
+            const availableShifts = shifts.filter(s => s.name !== '休').map(s => s.name);
 
             employees.forEach((emp, index) => {
                 for (let d = 1; d <= daysInMonth; d++) {
@@ -392,7 +417,7 @@
                     const dateStr = `${monthKey}-${dayStr}`;
                     const key = `${emp}_${dateStr}`;
                     
-                    if (currentSchedules[key] === '休(固定)') continue; // 保留员工自排假不覆盖
+                    if (currentSchedules[key] === '休(固定)' || currentSchedules[key] === '休') continue; // 保留员工自排假
 
                     const assignedShift = availableShifts[(d + index) % availableShifts.length];
                     batchData.push({ month_key: monthKey, employee: emp, date_str: dateStr, shift: assignedShift });
@@ -409,7 +434,21 @@
         }
 
         async function clearMonthLeaves() {
-            if (!confirm('确定要清空当月所有岗位与排班资料吗？')) return;
+            if (!confirm('确定要清空当月所有员工的休假记录吗？')) return;
+            const monthKey = document.getElementById('month-select').value;
+            updateSyncStatus('清空中...', 'bg-rose-500 text-white');
+
+            const { error } = await _supabase.from('schedules').delete().eq('month_key', monthKey).eq('shift', '休(固定)');
+            if (error) { alert('清空失败: ' + error.message); return; }
+
+            await loadSchedulesFromCloud();
+            renderTable();
+            updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+            alert('当月休假已全数清空！');
+        }
+
+        async function clearMonthData() {
+            if (!confirm('警告：确定要清空当月所有的排班与假表资料吗？')) return;
             const monthKey = document.getElementById('month-select').value;
             updateSyncStatus('清空中...', 'bg-rose-500 text-white');
 
@@ -419,7 +458,7 @@
             currentSchedules = {};
             renderTable();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-            alert('当月资料已全数清空！');
+            alert('当月所有资料已清空！');
         }
 
         document.getElementById('month-select').addEventListener('change', async () => {
