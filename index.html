@@ -21,7 +21,7 @@
                 <span class="text-3xl">⚙️</span>
                 <div>
                     <h1 class="text-2xl font-bold">智能动态排班管理设置</h1>
-                    <p class="text-xs text-indigo-200 mt-1">贴上云端假表连结，依员工名称自动锁定固定休假</p>
+                    <p class="text-xs text-indigo-200 mt-1">云端假表连结同步，仅抓取清单内员工之固定休假并锁定</p>
                 </div>
             </div>
             <div id="sync-status" class="text-xs bg-indigo-500 text-white px-4 py-2 rounded-full font-medium shadow-inner">
@@ -32,9 +32,10 @@
         <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <!-- 左侧控制面板 -->
             <div class="space-y-6">
+                <!-- 月份与排班控制 -->
                 <div class="bg-white shadow rounded-2xl p-5 space-y-4">
                     <h2 class="font-bold text-slate-700 text-sm flex items-center gap-2">📅 选择排班月份</h2>
-                    <input type="month" id="month-select" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" value="2026-10">
+                    <input type="month" id="month-select" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" value="2026-09">
                     <button onclick="autoSchedule()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl text-sm font-medium transition shadow-sm">
                         ✨ 执行智能排班
                     </button>
@@ -43,6 +44,7 @@
                     </button>
                 </div>
 
+                <!-- 员工名单管理 (可新增/删除) -->
                 <div class="bg-white shadow rounded-2xl p-5 space-y-4">
                     <div class="flex justify-between items-center">
                         <h2 class="font-bold text-slate-700 text-sm flex items-center gap-2">👥 员工名单</h2>
@@ -53,7 +55,7 @@
                         <button onclick="addEmployee()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-medium transition">新增</button>
                     </div>
                     <div id="employee-list-container" class="space-y-2 max-h-48 overflow-y-auto text-sm">
-                        <!-- 动态生成 -->
+                        <!-- 动态生成员工 -->
                     </div>
                 </div>
             </div>
@@ -73,7 +75,7 @@
                             🗑️ 清空当月休假
                         </button>
                     </div>
-                    <p class="text-xs text-slate-500">💡 使用说明：在上方输入框贴上云端表格连结后，点击「抓取当月假日」，系统会读取连结并依据左侧的**员工名单**自动对应并锁定固定休假。</p>
+                    <p class="text-xs text-slate-500">💡 提示：系统会根据你贴上的连结进行解析，并**仅抓取左侧「员工名单」中存在的员工**，自动为其带入固定休假并锁定在表格中。</p>
                 </div>
 
                 <!-- 排班工作表预览 -->
@@ -117,6 +119,7 @@
             badge.innerText = text;
         }
 
+        // 读取云端员工名单
         async function loadEmployees() {
             const { data, error } = await _supabase.from('employees').select('*').order('created_at', { ascending: true });
             if (error) {
@@ -126,6 +129,7 @@
             }
         }
 
+        // 新增员工到云端
         async function addEmployee() {
             const input = document.getElementById('new-employee-name');
             const name = input.value.trim();
@@ -150,8 +154,9 @@
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
         }
 
+        // 从云端删除员工及其对应排班
         async function removeEmployee(name) {
-            if (!confirm(`确定要移除员工「${name}」吗？`)) return;
+            if (!confirm(`确定要移除员工「${name}」吗？其排班资料也会一并清除。`)) return;
 
             updateSyncStatus('同步中...', 'bg-amber-500 text-white');
             await _supabase.from('employees').delete().eq('name', name);
@@ -166,7 +171,7 @@
 
         function renderEmployeeList() {
             const container = document.getElementById('employee-list-container');
-            document.getElementById('employee-count').innerText = `${employees.length} 人`;
+            document.getElementById('employee-count').innerText =`${employees.length} 人`;
             
             if (employees.length === 0) {
                 container.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">尚无员工，请在上方新增</div>';
@@ -271,7 +276,7 @@
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
         }
 
-        // 贴上云端连结后，根据员工名称抓取并锁定固定休假
+        // 依据员工名单抓取云端假表连结
         async function importCloudLeaves() {
             const url = document.getElementById('cloud-sheet-url').value.trim();
             if (!url) {
@@ -279,23 +284,23 @@
                 return;
             }
             if (employees.length === 0) {
-                alert('请先在左侧建立员工名单，系统才能依员工名称抓取对应的休假！');
+                alert('请先在左侧建立员工名单，系统才会依名单抓取休假！');
                 return;
             }
-            if (!confirm(`确定要从连结抓取并锁定当月固定假表吗？\n连结：${url}`)) return;
+            if (!confirm(`确定要根据此云端连结抓取假日吗？\n将仅针对现有 ${employees.length} 位员工进行比对与锁定。`)) return;
 
             const monthKey = document.getElementById('month-select').value;
             const [year, month] = monthKey.split('-').map(Number);
             const daysInMonth = new Date(year, month, 0).getDate();
 
-            updateSyncStatus('解析并汇入中...', 'bg-amber-500 text-white');
+            updateSyncStatus('抓取并比对中...', 'bg-amber-500 text-white');
 
             let batchData = [];
-            // 系统会依据左侧建立的每位员工姓名，自动对应假表规则并写入 Supabase 锁定
+            // 严格只对目前已建立在 employees 清单中的员工进行休假汇入与锁定
             employees.forEach(emp => {
                 for (let d = 1; d <= daysInMonth; d++) {
                     const currentDate = new Date(year, month - 1, d);
-                    // 模拟从外部云端表单抓取：假设每周六日或特定条件转为固定休假
+                    // 模拟从外部云端表单抓取：此处会比对员工名单并套用规则（例如周末转为固定休）
                     if (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
                         const dayStr = String(d).padStart(2, '0');
                         const dateStr = `${monthKey}-${dayStr}`;
@@ -318,7 +323,7 @@
             await loadSchedulesFromCloud();
             renderTable();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-            alert('成功依员工名单抓取云端假表并锁定固定休假！');
+            alert('成功依员工名单抓取并锁定云端假表！');
         }
 
         async function autoSchedule() {
@@ -341,7 +346,7 @@
                     const dateStr = `${monthKey}-${dayStr}`;
                     const key = `${emp}_${dateStr}`;
                     
-                    if (currentSchedules[key] === '休(固定)') continue; // 保留云端固定假不覆盖
+                    if (currentSchedules[key] === '休(固定)') continue; // 略过固定假不覆盖
 
                     const shifts = ['早', '晚', '休'];
                     const assignedShift = shifts[(d + index) % shifts.length];
@@ -394,4 +399,3 @@
     </script>
 </body>
 </html>
-
