@@ -21,7 +21,7 @@
                 <span class="text-3xl">⚙️</span>
                 <div>
                     <h1 class="text-2xl font-bold">智能动态排班管理设置</h1>
-                    <p class="text-xs text-indigo-200 mt-1">云端假表同步：1 = 休假（支援全方位表格对齐）</p>
+                    <p class="text-xs text-indigo-200 mt-1">云端假表同步：1 = 休假（名字横式排列模式）</p>
                 </div>
             </div>
             <div id="sync-status" class="text-xs bg-indigo-500 text-white px-4 py-2 rounded-full font-medium shadow-inner">
@@ -65,10 +65,10 @@
                         🗑️ 清空当月休假
                     </button>
                 </div>
-                <p class="text-xs text-slate-400">💡 提示：系统会智慧扫描表格中的员工名字与日期，抓取值为 **1** 的格子作为休假。</p>
+                <p class="text-xs text-slate-400">💡 提示：系统会自动比对横式排列的员工名字，抓取值为 **1** 的格子作为休假。</p>
             </div>
 
-            <!-- 岗位设置（无强度） -->
+            <!-- 岗位设置 -->
             <div class="space-y-3">
                 <label class="block font-bold text-slate-700 text-sm">🏷️ 岗位设置：</label>
                 <div class="flex flex-col sm:flex-row gap-3">
@@ -91,10 +91,10 @@
             </div>
         </div>
 
-        <!-- 排班工作表预览 -->
+        <!-- 排班工作表预览 (名字横式排列) -->
         <div class="bg-white shadow rounded-2xl p-6 space-y-4">
             <div class="flex justify-between items-center border-b border-slate-100 pb-4">
-                <h2 id="table-title" class="font-bold text-slate-800 text-lg">📊 排班工作表预览</h2>
+                <h2 id="table-title" class="font-bold text-slate-800 text-lg">📊 排班工作表预览 (名字横式)</h2>
                 <span class="text-xs text-slate-500">🔒 锁定状态：云端读取之员工休假无法更改</span>
             </div>
             <div class="overflow-x-auto min-h-[400px]">
@@ -236,38 +236,41 @@
             }
         }
 
+        // 关键修改：名字横式排版（左侧直行变日期，上方横排变员工名字）
         function renderTable() {
             const monthKey = document.getElementById('month-select').value;
             const [year, month] = monthKey.split('-').map(Number);
             const daysInMonth = new Date(year, month, 0).getDate();
 
-            document.getElementById('table-title').innerText = `📊 ${year}年${month}月 排班工作表预览`;
+            document.getElementById('table-title').innerText = `📊 ${year}年${month}月 排班工作表预览 (名字横式)`;
 
             const table = document.getElementById('schedule-table');
             if (employees.length === 0) {
-                table.innerHTML = '<tr><td colspan="32" class="text-center py-12 text-slate-400 text-sm">请先上方添加员工，即可开始排班！</td></tr>';
+                table.innerHTML = '<tr><td colspan="100" class="text-center py-12 text-slate-400 text-sm">请先上方添加员工，即可开始排班！</td></tr>';
                 return;
             }
 
             let html = '';
+            // 表头：第一栏是日期，后面每一个栏位是一个员工名字
             html += '<thead><tr class="bg-slate-100 border-b border-slate-200 text-xs text-slate-600 uppercase tracking-wider">';
-            html += '<th class="p-3 sticky left-0 bg-slate-100 z-10 w-28">员工姓名</th>';
-            for (let d = 1; d <= daysInMonth; d++) {
-                html += `<th class="p-2 text-center min-w-[55px]">${d}日</th>`;
-            }
+            html += '<th class="p-3 sticky left-0 bg-slate-100 z-10 w-20 text-center">日期</th>';
+            employees.forEach(emp => {
+                html += `<th class="p-2 text-center min-w-[110px]">${emp}</th>`;
+            });
             html += '</tr></thead>';
 
+            // 表身：每一列代表一天（1日到31日）
             html += '<tbody class="divide-y divide-slate-100 text-sm">';
-            employees.forEach(emp => {
-                html += `<tr class="hover:bg-slate-50/50">`;
-                html += `<td class="p-3 font-semibold text-slate-800 sticky left-0 bg-white z-10 shadow-sm">${emp}</td>`;
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dayStr = String(d).padStart(2, '0');
+                const dateStr = `${monthKey}-${dayStr}`;
 
-                for (let d = 1; d <= daysInMonth; d++) {
-                    const dayStr = String(d).padStart(2, '0');
-                    const dateStr = `${monthKey}-${dayStr}`;
+                html += `<tr class="hover:bg-slate-50/50">`;
+                html += `<td class="p-3 font-semibold text-slate-800 sticky left-0 bg-white z-10 shadow-sm text-center">${d}日</td>`;
+
+                employees.forEach(emp => {
                     const key = `${emp}_${dateStr}`;
                     const shift = currentSchedules[key] || '';
-                    
                     const isLocked = (shift === '休(固定)' || shift === '休');
 
                     if (isLocked) {
@@ -282,9 +285,9 @@
                         });
                         html += `</select></td>`;
                     }
-                }
+                });
                 html += `</tr>`;
-            });
+            }
             html += '</tbody>';
             table.innerHTML = html;
         }
@@ -307,7 +310,7 @@
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
         }
 
-        // 智慧解析横式 Google Sheets 假表
+        // 智慧解析云端假表（名字横式、日期直行）
         async function importCloudLeaves() {
             const rawUrl = document.getElementById('cloud-sheet-url').value.trim();
             if (!rawUrl) { alert('请先贴上云端假表连结！'); return; }
@@ -331,55 +334,56 @@
                 const daysInMonth = new Date(year, month, 0).getDate();
 
                 let batchData = [];
-                let headerDateMap = {}; // 记录每一栏对应几号 (例如第 2 栏是 1 日)
+                let empColMap = {}; // 记录哪一栏是哪个员工的名字
+                let dateRowMap = {}; // 记录哪一列是几号
 
-                // 第一阶段：寻找哪一列或哪几栏包含日期标题 (1, 2, 3... 或 1日, 2日)
+                // 第一阶段：在表格中寻找员工名字所在的栏位索引 (Column Index)
+                rows.forEach((row, rIdx) => {
+                    row.forEach((cell, cIdx) => {
+                        const clean = cell.trim();
+                        if (employees.includes(clean)) {
+                            empColMap[cIdx] = clean;
+                        }
+                    });
+                });
+
+                // 第二阶段：在表格中寻找日期所在的列索引 (Row Index)
                 rows.forEach((row, rIdx) => {
                     row.forEach((cell, cIdx) => {
                         const clean = cell.replace(/日|號/g, '').trim();
                         const num = parseInt(clean, 10);
                         if (!isNaN(num) && num >= 1 && num <= 31) {
-                            headerDateMap[cIdx] = num;
+                            dateRowMap[rIdx] = num;
                         }
                     });
                 });
 
-                // 第二阶段：遍历每一行，寻找左侧（或整行）是否有员工名字，然后比对日期栏位的值是否为 1
-                rows.forEach((row) => {
-                    let foundEmp = null;
-
-                    // 检查整行里有没有符合系统内的员工名字
-                    row.forEach(cell => {
-                        const clean = cell.trim();
-                        if (employees.includes(clean)) {
-                            foundEmp = clean;
-                        }
-                    });
-
-                    if (foundEmp) {
-                        // 找到了员工，检查这一行中每个有对应日期的栏位
-                        Object.keys(headerDateMap).forEach(cIdx => {
-                            const dayNum = headerDateMap[cIdx];
-                            const val = row[cIdx] !== undefined ? row[cIdx].trim() : '';
-                            
-                            if (val === '1' || val === '１') {
-                                if (dayNum >= 1 && dayNum <= daysInMonth) {
+                // 第三阶段：遍历交叉格子，如果值为 1 则代表该员工该天休假
+                Object.keys(dateRowMap).forEach(rIdx => {
+                    const dayNum = dateRowMap[rIdx];
+                    if (dayNum >= 1 && dayNum <= daysInMonth) {
+                        const rowData = rows[rIdx];
+                        if (rowData) {
+                            Object.keys(empColMap).forEach(cIdx => {
+                                const empName = empColMap[cIdx];
+                                const val = rowData[cIdx] !== undefined ? rowData[cIdx].trim() : '';
+                                if (val === '1' || val === '１') {
                                     const dayStr = String(dayNum).padStart(2, '0');
                                     const dateStr = `${monthKey}-${dayStr}`;
                                     batchData.push({
                                         month_key: monthKey,
-                                        employee: foundEmp,
+                                        employee: empName,
                                         date_str: dateStr,
                                         shift: '休(固定)'
                                     });
                                 }
-                            }
-                        });
+                            });
+                        }
                     }
                 });
 
                 if (batchData.length === 0) {
-                    alert('抓取成功但未侦测到匹配的休假座标！请确认：\n1. 网页内的员工名字与 Google 试算表完全一致。\n2. 试算表上有標示日期（1~31），且休假格子填的是数字 1。');
+                    alert('抓取成功但未侦测到匹配的休假座标！请确认：\n1. 网页内的员工名字与 Google 试算表完全一致（且员工名字在横向栏位）。\n2. 试算表上有標示日期（1~31，直行），且休假格子填的是数字 1。');
                     updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
                     return;
                 }
@@ -390,7 +394,7 @@
                 await loadSchedulesFromCloud();
                 renderTable();
                 updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-                alert(`成功抓取云端假表！已为你网页中的员工锁定 ${batchData.length} 笔休假。`);
+                alert(`成功抓取云端假表！已为你锁定 ${batchData.length} 笔休假。`);
 
             } catch (err) {
                 alert('抓取失败: ' + err.message + '\n\n提示：请确认 Google 试算表已开启共用权限（知道连结即可检视）。');
