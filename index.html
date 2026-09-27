@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能动态排班管理设置 (云端连结自動解析版)</title>
+    <title>智能动态排班管理设置 (云端假表 1 = 休假)</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Supabase JS Client -->
@@ -21,7 +21,7 @@
                 <span class="text-3xl">⚙️</span>
                 <div>
                     <h1 class="text-2xl font-bold">智能动态排班管理设置</h1>
-                    <p class="text-xs text-indigo-200 mt-1">支援云端假表连结自动抓取、员工锁定与自建岗位</p>
+                    <p class="text-xs text-indigo-200 mt-1">云端假表同步：对应数值 1 为休假，仅抓取网页内建员工名单</p>
                 </div>
             </div>
             <div id="sync-status" class="text-xs bg-indigo-500 text-white px-4 py-2 rounded-full font-medium shadow-inner">
@@ -65,7 +65,7 @@
                         🗑️ 清空当月休假
                     </button>
                 </div>
-                <p class="text-xs text-slate-400">💡 提示：系统会自动读取该云端表格，并**只会抓取网页上方已建立的员工名字**所对应的休假日期进行锁定！</p>
+                <p class="text-xs text-slate-400">💡 提示：系统会自动读取该云端表格，辨识格子中的 **1** 为休假，并**只抓取网页上方已输入的员工名字**所对应的日期进行锁定！</p>
             </div>
 
             <!-- 岗位与强度设置 -->
@@ -143,7 +143,6 @@
             badge.innerText = text;
         }
 
-        // 员工管理
         async function loadEmployees() {
             const { data } = await _supabase.from('employees').select('*').order('created_at', { ascending: true });
             employees = data ? data.map(item => item.name) : [];
@@ -189,7 +188,6 @@
             select.innerHTML = html;
         }
 
-        // 岗位管理
         function loadShiftsLocal() {
             const saved = localStorage.getItem('workghost_custom_shifts_v2');
             if (saved) shifts = JSON.parse(saved);
@@ -239,7 +237,6 @@
             container.innerHTML = html;
         }
 
-        // 读取与储存排班资料
         async function loadSchedulesFromCloud() {
             const monthKey = document.getElementById('month-select').value;
             const { data } = await _supabase.from('schedules').select('*').eq('month_key', monthKey);
@@ -322,13 +319,12 @@
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
         }
 
-        // 核心：抓取云端假表连结，自动过滤并读取网页中已输入的员工姓名休假
+        // 核心：读取云端假表连结，辨识数值「1」为休假，并精准匹配网页中已输入的员工姓名
         async function importCloudLeaves() {
             const rawUrl = document.getElementById('cloud-sheet-url').value.trim();
             if (!rawUrl) { alert('请先贴上云端假表连结！'); return; }
             if (employees.length === 0) { alert('请先上方添加员工名单！'); return; }
 
-            // 将 Google Sheets 连结转换为 CSV 汇出格式以供网页直接读取
             let csvUrl = rawUrl;
             if (rawUrl.includes('/edit')) {
                 csvUrl = rawUrl.split('/edit')[0] + '/export?format=csv';
@@ -350,20 +346,18 @@
                 let matchCount = 0;
 
                 lines.forEach(line => {
-                    // 简单的 CSV 解析
                     const cols = line.split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
                     if (cols.length < 2) return;
 
                     const rowName = cols[0];
-                    // **关键逻辑：只读取网页上已输入的员工名字**
+                    // **关键比对：只抓取网页上方已输入的员工名字**
                     if (employees.includes(rowName)) {
                         matchCount++;
-                        // 从第 2 个栏位开始对应日期（1号到31号）
+                        // 从第 2 个栏位开始检查 1号 到 31号
                         for (let d = 1; d <= daysInMonth; d++) {
-                            // 寻找对应日期的栏位值（假设表格结构为 姓名, 日1, 日2... 或包含日期标题）
-                            // 检查有填数字（如 1）或标注休假的格子
                             const cellVal = cols[d] !== undefined ? cols[d] : '';
-                            if (cellVal !== '' && (cellVal === '1' || cellVal.includes('休') || cellVal.toLowerCase() === 'true')) {
+                            // **核心判定：只要格子里填的是 "1"（或包含 "1"），就视为休假**
+                            if (cellVal === '1' || cellVal === '１') {
                                 const dayStr = String(d).padStart(2, '0');
                                 const dateStr = `${monthKey}-${dayStr}`;
                                 batchData.push({
@@ -378,7 +372,7 @@
                 });
 
                 if (batchData.length === 0) {
-                    alert(`成功比对到 ${matchCount} 位员工，但在表格中未找到休假标记！请确认表格中的休假是用「1」或其他标记标示。`);
+                    alert(`成功比对到 ${matchCount} 位员工，但在表格中未找到填入「1」的休假格子！请确认表格中的休假是否以数字 1 标示。`);
                     updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
                     return;
                 }
@@ -389,7 +383,7 @@
                 await loadSchedulesFromCloud();
                 renderTable();
                 updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-                alert(`成功抓取云端假表！已为网页中存在的员工锁定 ${batchData.length} 笔休假。`);
+                alert(`成功抓取云端假表！已辨识数值 1 并为网页中存在的员工锁定 ${batchData.length} 笔休假。`);
 
             } catch (err) {
                 alert('抓取失败: ' + err.message + '\n\n提示：请确认 Google 试算表已开启共用权限（知道连结即可检视）。');
@@ -417,7 +411,7 @@
                     const dateStr = `${monthKey}-${dayStr}`;
                     const key = `${emp}_${dateStr}`;
                     
-                    if (currentSchedules[key] === '休(固定)' || currentSchedules[key] === '休') continue; // 保留员工自排假
+                    if (currentSchedules[key] === '休(固定)' || currentSchedules[key] === '休') continue; // 保留员工假不覆盖
 
                     const assignedShift = availableShifts[(d + index) % availableShifts.length];
                     batchData.push({ month_key: monthKey, employee: emp, date_str: dateStr, shift: assignedShift });
