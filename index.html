@@ -3,344 +3,249 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智慧排班系统 (Supabase 版)</title>
-    <!-- Tailwind CSS -->
+    <title>智慧排班系统 (云端同步版)</title>
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- FontAwesome 图标 -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Supabase JS SDK -->
+    <!-- Supabase JS Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; }
+    </style>
 </head>
-<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+<body class="bg-slate-50 text-slate-800 min-h-screen p-4 sm:p-6">
 
-    <!-- 顶栏导航 -->
-    <header class="bg-indigo-600 text-white shadow-md">
-        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-            <div class="flex items-center space-x-3">
-                <i class="fa-solid fa-calendar-days text-2xl"></i>
-                <h1 class="text-xl font-bold tracking-wide">智慧排班系统 <span class="text-xs bg-indigo-500 px-2 py-0.5 rounded-full">Supabase</span></h1>
+    <div class="max-w-7xl mx-auto space-y-6">
+        <!-- 顶部标头 -->
+        <header class="bg-white shadow rounded-2xl p-6 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900">🏢 智慧排班与云端假表系统</h1>
+                <p class="text-sm text-slate-500 mt-1">云端资料自动同步，固定休假锁定不可变动</p>
             </div>
-            <div class="flex space-x-2">
-                <button onclick="exportCSV()" class="bg-indigo-500 hover:bg-indigo-400 px-3 py-1.5 rounded text-sm font-medium transition flex items-center space-x-1">
-                    <i class="fa-solid fa-download"></i><span>汇出 CSV</span>
+            <!-- 功能按键群组 -->
+            <div class="flex flex-wrap items-center gap-3">
+                <button onclick="importDefaultLeaves()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm">
+                    📥 一键导入假表
                 </button>
-            </div>
-        </div>
-    </header>
-
-    <!-- 主要内容区 -->
-    <main class="flex-grow max-w-7xl w-full mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-4 gap-6">
-        
-        <!-- 左侧控制面板 -->
-        <div class="lg:col-span-1 space-y-6">
-            <!-- 设定月份与操作 -->
-            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
-                <h2 class="font-semibold text-slate-700 flex items-center space-x-2">
-                    <i class="fa-solid fa-gear text-indigo-500"></i><span>排班控制台</span>
-                </h2>
-                <div>
-                    <label class="block text-xs font-semibold text-slate-500 mb-1">选择月份</label>
-                    <input type="month" id="scheduleMonth" value="2026-10" onchange="loadMonthData()" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                </div>
-                <button onclick="autoGenerateSchedule()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg text-sm font-semibold shadow transition flex items-center justify-center space-x-2">
-                    <i class="fa-solid fa-wand-magic-sparkles"></i><span>一键智慧排班</span>
+                <button onclick="clearAllLeaves()" class="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm">
+                    🗑️ 一键清空假表
                 </button>
-                <button onclick="clearSchedule()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 py-2 rounded-lg text-sm font-medium transition">
-                    清除本月班表
-                </button>
+                <div id="sync-status" class="text-xs bg-amber-100 text-amber-800 px-3 py-1.5 rounded-full font-medium">
+                    🔄 连线同步中...
+                </div>
             </div>
+        </header>
 
-            <!-- 员工清单管理 -->
-            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
-                <div class="flex justify-between items-center">
-                    <h2 class="font-semibold text-slate-700 flex items-center space-x-2">
-                        <i class="fa-solid fa-users text-indigo-500"></i><span>员工名单</span>
-                    </h2>
-                    <span id="employeeCount" class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">0 人</span>
+        <!-- 主控制面板 -->
+        <section class="bg-white shadow rounded-2xl p-6">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <label for="month-select" class="font-semibold text-slate-700">选择排班月份：</label>
+                    <input type="month" id="month-select" class="border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" value="2026-10">
                 </div>
-                <div class="flex space-x-2">
-                    <input type="text" id="newEmployeeName" placeholder="输入员工姓名..." class="flex-grow border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <button onclick="addEmployee()" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition">新增</button>
-                </div>
-                <div id="employeeList" class="space-y-2 max-h-60 overflow-y-auto pr-1">
-                    <!-- 动态生成 -->
+                <div class="text-xs text-slate-500 bg-slate-100 px-3 py-2 rounded-xl">
+                    💡 提示：带有「休 (固定)」标记的格子由云端假表管制，无法直接手动变动。
                 </div>
             </div>
-        </div>
+        </section>
 
-        <!-- 右侧主表格区 -->
-        <div class="lg:col-span-3 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-            <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
-                <h2 class="font-semibold text-slate-700 flex items-center space-x-2">
-                    <i class="fa-solid fa-table text-indigo-500"></i><span>排班总表 (云端同步)</span>
-                </h2>
-                <div class="flex items-center space-x-3 text-xs text-slate-500">
-                    <span class="flex items-center space-x-1"><span class="w-3 h-3 bg-sky-100 border border-sky-300 rounded inline-block"></span><span>早班 (早)</span></span>
-                    <span class="flex items-center space-x-1"><span class="w-3 h-3 bg-amber-100 border border-amber-300 rounded inline-block"></span><span>晚班 (晚)</span></span>
-                    <span class="flex items-center space-x-1"><span class="w-3 h-3 bg-slate-100 border border-slate-300 rounded inline-block"></span><span>休假 (休)</span></span>
-                </div>
-            </div>
-            
-            <!-- 表格滚动视窗 -->
-            <div class="flex-grow overflow-x-auto relative">
-                <table id="scheduleTable" class="w-full text-left border-collapse text-xs">
+        <!-- 排班表格区域 -->
+        <section class="bg-white shadow rounded-2xl overflow-hidden">
+            <div class="overflow-x-auto">
+                <table id="schedule-table" class="w-full text-left border-collapse">
                     <!-- 动态生成 -->
                 </table>
             </div>
-        </div>
+        </section>
+    </div>
 
-    </main>
-
-    <!-- 页脚 -->
-    <footer class="text-center py-4 text-xs text-slate-400 border-t border-slate-200 mt-auto">
-        智慧排班系统 (Supabase) &copy; 2026
-    </footer>
-
-    <!-- 逻辑程式码 -->
     <script>
         // ======= 请在此填入你的 Supabase 凭证 =======
         const SUPABASE_URL = 'https://untcdzgliocuplqifejc.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_exIdFgcOJ3eIRXrahU5LAw_Tr_43AMw';
+        const SUPABASE_ANON_KEY = 'sb_publishable_exIdFgcOJ3eIRXrahU5LAw_Tr_43AMw';
+
+        // 初始化 Supabase 客户端
+        const { createClient } = supabase;
+        const _supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // 模拟员工名单
+        const employees = ['员工 A', '员工 B', '员工 C', '员工 D'];
         
-        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        let currentSchedules = {}; // 储存从云端抓取的排班/休假资料
 
-        let employees = JSON.parse(localStorage.getItem('shift_employees')) || ['张三', '李四', '王五', '赵六', '孙七'];
-        let scheduleData = {}; // 格式: "YYYY-MM-DD_员工名称": "早" / "晚" / "休"
-        const shiftTypes = ['早', '晚', '休'];
-        const shiftStyles = {
-            '早': 'bg-sky-50 text-sky-700 border-sky-200',
-            '晚': 'bg-amber-50 text-amber-700 border-amber-200',
-            '休': 'bg-slate-100 text-slate-500 border-slate-200'
-        };
+        async function init() {
+            updateSyncStatus('連線中...', 'bg-amber-100 text-amber-800');
+            await loadSchedulesFromCloud();
+            renderTable();
+            updateSyncStatus('已同步云端', 'bg-emerald-100 text-emerald-800');
+        }
 
-        window.onload = async function() {
-            renderEmployees();
-            await loadMonthData();
-        };
+        function updateSyncStatus(text, className) {
+            const badge = document.getElementById('sync-status');
+            badge.className = `text-xs px-3 py-1.5 rounded-full font-medium ${className}`;
+            badge.innerText = text;
+        }
 
-        // 从 Supabase 载入指定月份的数据
-        async function loadMonthData() {
-            const monthVal = document.getElementById('scheduleMonth').value;
-            const { data, error } = await supabaseClient
+        // 从云端读取排班与假表
+        async function loadSchedulesFromCloud() {
+            const monthKey = document.getElementById('month-select').value;
+            const { data, error } = await _supabase
                 .from('schedules')
                 .select('*')
-                .eq('month_key', monthVal);
+                .eq('month_key', monthKey);
 
+            currentSchedules = {};
             if (error) {
-                console.error('载入失败:', error);
-                alert('无法从云端载入资料，请检查 Supabase 连线设定。');
+                console.error('读取云端资料失败:', error.message);
                 return;
             }
 
-            scheduleData = {};
             if (data) {
-                data.forEach(row => {
-                    const key = `${row.date_str}_${row.employee}`;
-                    scheduleData[key] = row.shift;
+                data.forEach(item => {
+                    currentSchedules[`${item.employee}_${item.date_str}`] = item.shift;
                 });
             }
-            initCalendar();
         }
 
-        function renderEmployees() {
-            const listEl = document.getElementById('employeeList');
-            document.getElementById('employeeCount').innerText = `${employees.length} 人`;
-            listEl.innerHTML = '';
-            employees.forEach((emp, index) => {
-                listEl.innerHTML += `
-                    <div class="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg border border-slate-100 text-sm">
-                        <span class="font-medium text-slate-700">${emp}</span>
-                        <button onclick="removeEmployee(${index})" class="text-slate-400 hover:text-red-500 transition"><i class="fa-solid fa-trash-can"></i></button>
-                    </div>
-                `;
-            });
-        }
+        // 渲染排班表格
+        function renderTable() {
+            const monthKey = document.getElementById('month-select').value;
+            const [year, month] = monthKey.split('-').map(Number);
+            const daysInMonth = new Date(year, month, 0).getDate();
 
-        function addEmployee() {
-            const input = document.getElementById('newEmployeeName');
-            const name = input.value.trim();
-            if(name && !employees.includes(name)) {
-                employees.push(name);
-                input.value = '';
-                localStorage.setItem('shift_employees', JSON.stringify(employees));
-                renderEmployees();
-                initCalendar();
+            const table = document.getElementById('schedule-table');
+            let html = '';
+
+            // 表头
+            html += '<thead><tr class="bg-slate-100 border-b border-slate-200 text-xs text-slate-600 uppercase tracking-wider">';
+            html += '<th class="p-3 sticky left-0 bg-slate-100 z-10 w-28">员工姓名</th>';
+            for (let d = 1; d <= daysInMonth; d++) {
+                html += `<th class="p-2 text-center min-w-[45px]">${d}日</th>`;
             }
-        }
+            html += '</tr></thead>';
 
-        function removeEmployee(index) {
-            employees.splice(index, 1);
-            localStorage.setItem('shift_employees', JSON.stringify(employees));
-            renderEmployees();
-            initCalendar();
-        }
+            // 表身
+            html += '<tbody class="divide-y divide-slate-100 text-sm">';
+            employees.forEach(emp => {
+                html += `<tr class="hover:bg-slate-50/50">`;
+                html += `<td class="p-3 font-semibold text-slate-800 sticky left-0 bg-white z-10 shadow-sm">${emp}</td>`;
 
-        function getDaysInMonth(year, month) {
-            return new Date(year, month, 0).getDate();
-        }
-
-        function initCalendar() {
-            const monthVal = document.getElementById('scheduleMonth').value;
-            const [year, month] = monthVal.split('-').map(Number);
-            const daysCount = getDaysInMonth(year, month);
-
-            const table = document.getElementById('scheduleTable');
-            let html = `<thead><tr class="bg-slate-100 text-slate-600 border-b border-slate-200 sticky top-0 z-10">`;
-            html += `<th class="p-3 border-r border-slate-200 font-semibold min-w-[100px] bg-slate-100 sticky left-0 z-20">员工</th>`;
-            
-            for(let d = 1; d <= daysCount; d++) {
-                const dateObj = new Date(year, month - 1, d);
-                const weekDay = ['日', '月', '火', '水', '木', '金', '土'][dateObj.getDay()];
-                const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-                html += `<th class="p-2 text-center border-r border-slate-200 min-w-[42px] ${isWeekend ? 'bg-red-50/50 text-red-600' : ''}">${d}<br><span class="text-[10px] font-normal">${weekDay}</span></th>`;
-            }
-            html += `<th class="p-2 text-center min-w-[60px] bg-slate-100">出勤天数</th>`;
-            html += `</tr></thead><tbody>`;
-
-            if(employees.length === 0) {
-                html += `<tr><td colspan="${daysCount + 2}" class="text-center py-8 text-slate-400">请先在左侧新增员工</td></tr>`;
-            } else {
-                employees.forEach(emp => {
-                    html += `<tr class="border-b border-slate-100 hover:bg-slate-50/50">`;
-                    html += `<td class="p-3 font-medium text-slate-700 border-r border-slate-200 bg-white sticky left-0 z-10 shadow-sm">${emp}</td>`;
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const dayStr = String(d).padStart(2, '0');
+                    const dateStr = `${monthKey}-${dayStr}`;
+                    const key = `${emp}_${dateStr}`;
+                    const shift = currentSchedules[key] || '';
                     
-                    let workDaysCount = 0;
-                    for(let d = 1; d <= daysCount; d++) {
-                        const dayStr = String(d).padStart(2, '0');
-                        const dateStr = `${monthVal}-${dayStr}`;
-                        const key = `${dateStr}_${emp}`;
-                        const currentShift = scheduleData[key] || '休';
-                        if(currentShift !== '休') workDaysCount++;
+                    // 判断是否为云端锁定的固定休假
+                    const isLockedLeave = (shift === '休(固定)' || shift === '休');
 
-                        html += `<td class="p-1 text-center border-r border-slate-200">`;
-                        html += `<select onchange="updateShiftToSupabase('${monthVal}', '${dateStr}', '${emp}', this.value, this)" class="w-full text-center border rounded py-1 text-xs font-medium cursor-pointer ${shiftStyles[currentShift]}">`;
-                        shiftTypes.forEach(st => {
-                            html += `<option value="${st}" ${currentShift === st ? 'selected' : ''}>${st}</option>`;
-                        });
-                        html += `</select></td>`;
+                    if (isLockedLeave) {
+                        html += `<td class="p-2 text-center bg-rose-50 text-rose-700 font-bold text-xs" title="云端固定休假，无法更改">休(固定)</td>`;
+                    } else {
+                        html += `<td class="p-2 text-center">
+                            <select onchange="handleShiftChange('${emp}', '${dateStr}', this.value)" class="w-full text-center bg-transparent border border-slate-200 rounded p-1 text-xs focus:ring-2 focus:ring-indigo-500">
+                                <option value="" ${shift === '' ? 'selected' : ''}>-</option>
+                                <option value="早" ${shift === '早' ? 'selected' : ''}>早</option>
+                                <option value="晚" ${shift === '晚' ? 'selected' : ''}>晚</option>
+                                <option value="休" ${shift === '休' ? 'selected' : ''}>休</option>
+                            </select>
+                        </td>`;
                     }
-                    html += `<td class="p-2 text-center font-semibold text-slate-600 bg-slate-50">${workDaysCount} 天</td>`;
-                    html += `</tr>`;
-                });
-            }
-            html += `</tbody>`;
+                }
+                html += `</tr>`;
+            });
+            html += '</tbody>';
             table.innerHTML = html;
         }
 
-        // 更新单个班别到 Supabase
-        async function updateShiftToSupabase(monthKey, dateStr, employee, shift, selectElement) {
-            const key = `${dateStr}_${employee}`;
-            scheduleData[key] = shift;
-            
-            // 实时更新视觉样式
-            selectElement.className = `w-full text-center border rounded py-1 text-xs font-medium cursor-pointer ${shiftStyles[shift]}`;
+        // 储存排班变动至云端
+        async function handleShiftChange(employee, dateStr, shift) {
+            const monthKey = document.getElementById('month-select').value;
+            updateSyncStatus('同步中...', 'bg-amber-100 text-amber-800');
 
-            const { error } = await supabaseClient
-                .from('schedules')
-                .upsert({
-                    month_key: monthKey,
-                    employee: employee,
-                    date_str: dateStr,
-                    shift: shift
-                }, { onConflict: 'employee,date_str' });
-
-            if (error) {
-                console.error('储存失败:', error);
-                alert('云端同步失败，请检查网路。');
-            }
-        }
-
-        async function autoGenerateSchedule() {
-            if(employees.length === 0) {
-                alert('请先新增员工！');
-                return;
-            }
-            const monthVal = document.getElementById('scheduleMonth').value;
-            const [year, month] = monthVal.split('-').map(Number);
-            const daysCount = getDaysInMonth(year, month);
-
-            let upsertPayload = [];
-
-            for(let d = 1; d <= daysCount; d++) {
-                const dayStr = String(d).padStart(2, '0');
-                const dateStr = `${monthVal}-${dayStr}`;
-                let shuffled = [...employees].sort(() => Math.random() - 0.5);
-                
-                shuffled.forEach((emp, index) => {
-                    let shift = '休';
-                    if(index < Math.ceil(employees.length * 0.7)) {
-                        shift = index % 2 === 0 ? '早' : '晚';
-                    }
-                    upsertPayload.push({
-                        month_key: monthVal,
-                        employee: emp,
-                        date_str: dateStr,
-                        shift: shift
-                    });
-                });
-            }
-
-            const { error } = await supabaseClient
-                .from('schedules')
-                .upsert(upsertPayload, { onConflict: 'employee,date_str' });
-
-            if (error) {
-                console.error('自动排班储存失败:', error);
-                alert('自动排班同步至云端失败。');
-                return;
-            }
-
-            await loadMonthData();
-            alert('自动智慧排班完成并已同步至云端！');
-        }
-
-        async function clearSchedule() {
-            if(confirm('确定要清除本月所有云端排班资料吗？')) {
-                const monthVal = document.getElementById('scheduleMonth').value;
-                const { error } = await supabaseClient
-                    .from('schedules')
-                    .delete()
-                    .eq('month_key', monthVal);
+            if (shift === '') {
+                // 如果清空，则从云端删除
+                await _supabase.from('schedules').delete().match({ employee: employee, date_str: dateStr });
+                delete currentSchedules[`${employee}_${dateStr}`];
+            } else {
+                // 否则写入或更新
+                const { error } = await _supabase.from('schedules').upsert([
+                    { month_key: monthKey, employee: employee, date_str: dateStr, shift: shift }
+                ], { onConflict: 'employee,date_str' });
 
                 if (error) {
-                    console.error('清除失败:', error);
-                    alert('清除失败。');
+                    alert('储存失败: ' + error.message);
                     return;
                 }
-                await loadMonthData();
+                currentSchedules[`${employee}_${dateStr}`] = shift;
             }
+            updateSyncStatus('已同步云端', 'bg-emerald-100 text-emerald-800');
         }
 
-        function exportCSV() {
-            const monthVal = document.getElementById('scheduleMonth').value;
-            const [year, month] = monthVal.split('-').map(Number);
-            const daysCount = getDaysInMonth(year, month);
-
-            let csvContent = "\uFEFF员工,";
-            for(let d = 1; d <= daysCount; d++) csvContent += `${d}日,`;
-            csvContent += "总出勤\n";
-
+        // 一键导入预设假表（示范：让每位员工周六或特定日期自动填入「休(固定)」）
+        async function importDefaultLeaves() {
+            if (!confirm('确定要一键导入本月固定假表吗？')) return;
+            
+            const monthKey = document.getElementById('month-select').value;
+            const [year, month] = monthKey.split('-').map(Number);
+            const daysInMonth = new Date(year, month, 0).getDate();
+            
+            updateSyncStatus('导入假表中...', 'bg-amber-100 text-amber-800');
+            
+            let batchData = [];
             employees.forEach(emp => {
-                let row = `"${emp}",`;
-                let count = 0;
-                for(let d = 1; d <= daysCount; d++) {
-                    const dayStr = String(d).padStart(2, '0');
-                    const key = `${monthVal}-${dayStr}_${emp}`;
-                    const shift = scheduleData[key] || '休';
-                    row += `"${shift}",`;
-                    if(shift !== '休') count++;
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const currentDate = new Date(year, month - 1, d);
+                    // 示范规则：每逢星期日自动设为固定休假
+                    if (currentDate.getDay() === 0) {
+                        const dayStr = String(d).padStart(2, '0');
+                        const dateStr = `${monthKey}-${dayStr}`;
+                        batchData.push({
+                            month_key: monthKey,
+                            employee: emp,
+                            date_str: dateStr,
+                            shift: '休(固定)'
+                        });
+                    }
                 }
-                row += `"${count}天"\n`;
-                csvContent += row;
             });
 
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `排班表_${monthVal}.csv`;
-            a.click();
+            // 写入云端
+            const { error } = await _supabase.from('schedules').upsert(batchData, { onConflict: 'employee,date_str' });
+            if (error) {
+                alert('导入假表失败: ' + error.message);
+                return;
+            }
+
+            await loadSchedulesFromCloud();
+            renderTable();
+            updateSyncStatus('已同步云端', 'bg-emerald-100 text-emerald-800');
+            alert('成功一键导入云端假表！');
         }
+
+        // 一键清空本月假表/排班
+        async function clearAllLeaves() {
+            if (!confirm('警告：这将会清空本月所有的排班与假表资料，确定执行吗？')) return;
+
+            const monthKey = document.getElementById('month-select').value;
+            updateSyncStatus('清空中...', 'bg-rose-100 text-rose-800');
+
+            const { error } = await _supabase.from('schedules').delete().eq('month_key', monthKey);
+            if (error) {
+                alert('清空失败: ' + error.message);
+                return;
+            }
+
+            currentSchedules = {};
+            renderTable();
+            updateSyncStatus('已同步云端', 'bg-emerald-100 text-emerald-800');
+            alert('本月资料已全数清空！');
+        }
+
+        // 监听月份切换
+        document.getElementById('month-select').addEventListener('change', init);
+
+        // 初始执行
+        init();
     </script>
 </body>
 </html>
