@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧排班系统 (Supabase 版)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome 图标 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <!-- 顶栏导航 -->
+    <header class="bg-indigo-600 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <i class="fa-solid fa-calendar-days text-2xl"></i>
+                <h1 class="text-xl font-bold tracking-wide">智慧排班系统 <span class="text-xs bg-indigo-500 px-2 py-0.5 rounded-full">Supabase</span></h1>
+            </div>
+            <div class="flex space-x-2">
+                <button onclick="exportCSV()" class="bg-indigo-500 hover:bg-indigo-400 px-3 py-1.5 rounded text-sm font-medium transition flex items-center space-x-1">
+                    <i class="fa-solid fa-download"></i><span>汇出 CSV</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主要内容区 -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-4 gap-6">
+        
+        <!-- 左侧控制面板 -->
+        <div class="lg:col-span-1 space-y-6">
+            <!-- 设定月份与操作 -->
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
+                <h2 class="font-semibold text-slate-700 flex items-center space-x-2">
+                    <i class="fa-solid fa-gear text-indigo-500"></i><span>排班控制台</span>
+                </h2>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">选择月份</label>
+                    <input type="month" id="scheduleMonth" value="2026-10" onchange="loadMonthData()" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <button onclick="autoGenerateSchedule()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg text-sm font-semibold shadow transition flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i><span>一键智慧排班</span>
+                </button>
+                <button onclick="clearSchedule()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 py-2 rounded-lg text-sm font-medium transition">
+                    清除本月班表
+                </button>
+            </div>
+
+            <!-- 员工清单管理 -->
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
+                <div class="flex justify-between items-center">
+                    <h2 class="font-semibold text-slate-700 flex items-center space-x-2">
+                        <i class="fa-solid fa-users text-indigo-500"></i><span>员工名单</span>
+                    </h2>
+                    <span id="employeeCount" class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">0 人</span>
+                </div>
+                <div class="flex space-x-2">
+                    <input type="text" id="newEmployeeName" placeholder="输入员工姓名..." class="flex-grow border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <button onclick="addEmployee()" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition">新增</button>
+                </div>
+                <div id="employeeList" class="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧主表格区 -->
+        <div class="lg:col-span-3 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+            <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
+                <h2 class="font-semibold text-slate-700 flex items-center space-x-2">
+                    <i class="fa-solid fa-table text-indigo-500"></i><span>排班总表 (云端同步)</span>
+                </h2>
+                <div class="flex items-center space-x-3 text-xs text-slate-500">
+                    <span class="flex items-center space-x-1"><span class="w-3 h-3 bg-sky-100 border border-sky-300 rounded inline-block"></span><span>早班 (早)</span></span>
+                    <span class="flex items-center space-x-1"><span class="w-3 h-3 bg-amber-100 border border-amber-300 rounded inline-block"></span><span>晚班 (晚)</span></span>
+                    <span class="flex items-center space-x-1"><span class="w-3 h-3 bg-slate-100 border border-slate-300 rounded inline-block"></span><span>休假 (休)</span></span>
+                </div>
+            </div>
+            
+            <!-- 表格滚动视窗 -->
+            <div class="flex-grow overflow-x-auto relative">
+                <table id="scheduleTable" class="w-full text-left border-collapse text-xs">
+                    <!-- 动态生成 -->
+                </table>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="text-center py-4 text-xs text-slate-400 border-t border-slate-200 mt-auto">
+        智慧排班系统 (Supabase) &copy; 2026
+    </footer>
+
+    <!-- 逻辑程式码 -->
+    <script>
+        // ======= 请在此填入你的 Supabase 凭证 =======
+        const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+        const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+        
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let employees = JSON.parse(localStorage.getItem('shift_employees')) || ['张三', '李四', '王五', '赵六', '孙七'];
+        let scheduleData = {}; // 格式: "YYYY-MM-DD_员工名称": "早" / "晚" / "休"
+        const shiftTypes = ['早', '晚', '休'];
+        const shiftStyles = {
+            '早': 'bg-sky-50 text-sky-700 border-sky-200',
+            '晚': 'bg-amber-50 text-amber-700 border-amber-200',
+            '休': 'bg-slate-100 text-slate-500 border-slate-200'
+        };
+
+        window.onload = async function() {
+            renderEmployees();
+            await loadMonthData();
+        };
+
+        // 从 Supabase 载入指定月份的数据
+        async function loadMonthData() {
+            const monthVal = document.getElementById('scheduleMonth').value;
+            const { data, error } = await supabaseClient
+                .from('schedules')
+                .select('*')
+                .eq('month_key', monthVal);
+
+            if (error) {
+                console.error('载入失败:', error);
+                alert('无法从云端载入资料，请检查 Supabase 连线设定。');
+                return;
+            }
+
+            scheduleData = {};
+            if (data) {
+                data.forEach(row => {
+                    const key = `${row.date_str}_${row.employee}`;
+                    scheduleData[key] = row.shift;
+                });
+            }
+            initCalendar();
+        }
+
+        function renderEmployees() {
+            const listEl = document.getElementById('employeeList');
+            document.getElementById('employeeCount').innerText = `${employees.length} 人`;
+            listEl.innerHTML = '';
+            employees.forEach((emp, index) => {
+                listEl.innerHTML += `
+                    <div class="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg border border-slate-100 text-sm">
+                        <span class="font-medium text-slate-700">${emp}</span>
+                        <button onclick="removeEmployee(${index})" class="text-slate-400 hover:text-red-500 transition"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
+                `;
+            });
+        }
+
+        function addEmployee() {
+            const input = document.getElementById('newEmployeeName');
+            const name = input.value.trim();
+            if(name && !employees.includes(name)) {
+                employees.push(name);
+                input.value = '';
+                localStorage.setItem('shift_employees', JSON.stringify(employees));
+                renderEmployees();
+                initCalendar();
+            }
+        }
+
+        function removeEmployee(index) {
+            employees.splice(index, 1);
+            localStorage.setItem('shift_employees', JSON.stringify(employees));
+            renderEmployees();
+            initCalendar();
+        }
+
+        function getDaysInMonth(year, month) {
+            return new Date(year, month, 0).getDate();
+        }
+
+        function initCalendar() {
+            const monthVal = document.getElementById('scheduleMonth').value;
+            const [year, month] = monthVal.split('-').map(Number);
+            const daysCount = getDaysInMonth(year, month);
+
+            const table = document.getElementById('scheduleTable');
+            let html = `<thead><tr class="bg-slate-100 text-slate-600 border-b border-slate-200 sticky top-0 z-10">`;
+            html += `<th class="p-3 border-r border-slate-200 font-semibold min-w-[100px] bg-slate-100 sticky left-0 z-20">员工</th>`;
+            
+            for(let d = 1; d <= daysCount; d++) {
+                const dateObj = new Date(year, month - 1, d);
+                const weekDay = ['日', '月', '火', '水', '木', '金', '土'][dateObj.getDay()];
+                const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+                html += `<th class="p-2 text-center border-r border-slate-200 min-w-[42px] ${isWeekend ? 'bg-red-50/50 text-red-600' : ''}">${d}<br><span class="text-[10px] font-normal">${weekDay}</span></th>`;
+            }
+            html += `<th class="p-2 text-center min-w-[60px] bg-slate-100">出勤天数</th>`;
+            html += `</tr></thead><tbody>`;
+
+            if(employees.length === 0) {
+                html += `<tr><td colspan="${daysCount + 2}" class="text-center py-8 text-slate-400">请先在左侧新增员工</td></tr>`;
+            } else {
+                employees.forEach(emp => {
+                    html += `<tr class="border-b border-slate-100 hover:bg-slate-50/50">`;
+                    html += `<td class="p-3 font-medium text-slate-700 border-r border-slate-200 bg-white sticky left-0 z-10 shadow-sm">${emp}</td>`;
+                    
+                    let workDaysCount = 0;
+                    for(let d = 1; d <= daysCount; d++) {
+                        const dayStr = String(d).padStart(2, '0');
+                        const dateStr = `${monthVal}-${dayStr}`;
+                        const key = `${dateStr}_${emp}`;
+                        const currentShift = scheduleData[key] || '休';
+                        if(currentShift !== '休') workDaysCount++;
+
+                        html += `<td class="p-1 text-center border-r border-slate-200">`;
+                        html += `<select onchange="updateShiftToSupabase('${monthVal}', '${dateStr}', '${emp}', this.value, this)" class="w-full text-center border rounded py-1 text-xs font-medium cursor-pointer ${shiftStyles[currentShift]}">`;
+                        shiftTypes.forEach(st => {
+                            html += `<option value="${st}" ${currentShift === st ? 'selected' : ''}>${st}</option>`;
+                        });
+                        html += `</select></td>`;
+                    }
+                    html += `<td class="p-2 text-center font-semibold text-slate-600 bg-slate-50">${workDaysCount} 天</td>`;
+                    html += `</tr>`;
+                });
+            }
+            html += `</tbody>`;
+            table.innerHTML = html;
+        }
+
+        // 更新单个班别到 Supabase
+        async function updateShiftToSupabase(monthKey, dateStr, employee, shift, selectElement) {
+            const key = `${dateStr}_${employee}`;
+            scheduleData[key] = shift;
+            
+            // 实时更新视觉样式
+            selectElement.className = `w-full text-center border rounded py-1 text-xs font-medium cursor-pointer ${shiftStyles[shift]}`;
+
+            const { error } = await supabaseClient
+                .from('schedules')
+                .upsert({
+                    month_key: monthKey,
+                    employee: employee,
+                    date_str: dateStr,
+                    shift: shift
+                }, { onConflict: 'employee,date_str' });
+
+            if (error) {
+                console.error('储存失败:', error);
+                alert('云端同步失败，请检查网路。');
+            }
+        }
+
+        async function autoGenerateSchedule() {
+            if(employees.length === 0) {
+                alert('请先新增员工！');
+                return;
+            }
+            const monthVal = document.getElementById('scheduleMonth').value;
+            const [year, month] = monthVal.split('-').map(Number);
+            const daysCount = getDaysInMonth(year, month);
+
+            let upsertPayload = [];
+
+            for(let d = 1; d <= daysCount; d++) {
+                const dayStr = String(d).padStart(2, '0');
+                const dateStr = `${monthVal}-${dayStr}`;
+                let shuffled = [...employees].sort(() => Math.random() - 0.5);
+                
+                shuffled.forEach((emp, index) => {
+                    let shift = '休';
+                    if(index < Math.ceil(employees.length * 0.7)) {
+                        shift = index % 2 === 0 ? '早' : '晚';
+                    }
+                    upsertPayload.push({
+                        month_key: monthVal,
+                        employee: emp,
+                        date_str: dateStr,
+                        shift: shift
+                    });
+                });
+            }
+
+            const { error } = await supabaseClient
+                .from('schedules')
+                .upsert(upsertPayload, { onConflict: 'employee,date_str' });
+
+            if (error) {
+                console.error('自动排班储存失败:', error);
+                alert('自动排班同步至云端失败。');
+                return;
+            }
+
+            await loadMonthData();
+            alert('自动智慧排班完成并已同步至云端！');
+        }
+
+        async function clearSchedule() {
+            if(confirm('确定要清除本月所有云端排班资料吗？')) {
+                const monthVal = document.getElementById('scheduleMonth').value;
+                const { error } = await supabaseClient
+                    .from('schedules')
+                    .delete()
+                    .eq('month_key', monthVal);
+
+                if (error) {
+                    console.error('清除失败:', error);
+                    alert('清除失败。');
+                    return;
+                }
+                await loadMonthData();
+            }
+        }
+
+        function exportCSV() {
+            const monthVal = document.getElementById('scheduleMonth').value;
+            const [year, month] = monthVal.split('-').map(Number);
+            const daysCount = getDaysInMonth(year, month);
+
+            let csvContent = "\uFEFF员工,";
+            for(let d = 1; d <= daysCount; d++) csvContent += `${d}日,`;
+            csvContent += "总出勤\n";
+
+            employees.forEach(emp => {
+                let row = `"${emp}",`;
+                let count = 0;
+                for(let d = 1; d <= daysCount; d++) {
+                    const dayStr = String(d).padStart(2, '0');
+                    const key = `${monthVal}-${dayStr}_${emp}`;
+                    const shift = scheduleData[key] || '休';
+                    row += `"${shift}",`;
+                    if(shift !== '休') count++;
+                }
+                row += `"${count}天"\n`;
+                csvContent += row;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `排班表_${monthVal}.csv`;
+            a.click();
+        }
+    </script>
+</body>
+</html>
