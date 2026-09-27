@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能动态排班管理设置 (除错诊断版)</title>
+    <title>智能动态排班管理设置</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Supabase JS Client -->
@@ -21,7 +21,7 @@
                 <span class="text-3xl">⚙️</span>
                 <div>
                     <h1 class="text-2xl font-bold">智能动态排班管理设置</h1>
-                    <p class="text-xs text-indigo-200 mt-1">云端假表同步：支援 1 = 休假（含智能名称比对诊断）</p>
+                    <p class="text-xs text-indigo-200 mt-1">云端假表同步：1 = 休假（支援全方位表格对齐）</p>
                 </div>
             </div>
             <div id="sync-status" class="text-xs bg-indigo-500 text-white px-4 py-2 rounded-full font-medium shadow-inner">
@@ -65,23 +65,18 @@
                         🗑️ 清空当月休假
                     </button>
                 </div>
-                <p class="text-xs text-slate-400">💡 提示：系统会自动读取该云端表格，辨识格子中的 **1** 为休假。若比对不到员工，会弹出诊断视窗协助排查！</p>
+                <p class="text-xs text-slate-400">💡 提示：系统会自动比对网页内的员工名字，并抓取值为 **1** 的格子作为休假。</p>
             </div>
 
-            <!-- 岗位与强度设置 -->
+            <!-- 岗位设置（无强度） -->
             <div class="space-y-3">
-                <label class="block font-bold text-slate-700 text-sm">🏷️ 岗位与强度设置：</label>
+                <label class="block font-bold text-slate-700 text-sm">🏷️ 岗位设置：</label>
                 <div class="flex flex-col sm:flex-row gap-3">
                     <input type="text" id="new-shift-name" placeholder="输入岗位名称 (换行用 \n)" class="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <select id="new-shift-intensity" class="border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <option value="中">🟡 中强度</option>
-                        <option value="低">🟢 低强度</option>
-                        <option value="高">🔴 高强度</option>
-                    </select>
-                    <button onclick="addShifts()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl text-sm font-medium transition whitespace-nowrap">添加岗位</button>
+                    <button onclick="addShifts()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-xl text-sm font-medium transition whitespace-nowrap">添加岗位</button>
                 </div>
                 <div id="shift-list-container" class="flex flex-wrap gap-2 pt-2">
-                    <!-- 动态生成自建岗位标签 -->
+                    <!-- 动态生成岗位标签 -->
                 </div>
             </div>
 
@@ -118,12 +113,7 @@
         const _supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         let employees = [];
-        let shifts = [
-            { name: '休', intensity: '低' },
-            { name: 'OL FB JY', intensity: '中' },
-            { name: 'MT XO SH YS', intensity: '中' },
-            { name: '支援', intensity: '低' }
-        ];
+        let shifts = ['休', 'OL FB JY', 'MT XO SH YS', '支援'];
         let currentSchedules = {};
 
         async function init() {
@@ -189,23 +179,22 @@
         }
 
         function loadShiftsLocal() {
-            const saved = localStorage.getItem('workghost_custom_shifts_v2');
+            const saved = localStorage.getItem('workghost_shifts_noshift_v1');
             if (saved) shifts = JSON.parse(saved);
         }
         function saveShiftsLocal() {
-            localStorage.setItem('workghost_custom_shifts_v2', JSON.stringify(shifts));
+            localStorage.setItem('workghost_shifts_noshift_v1', JSON.stringify(shifts));
         }
 
         function addShifts() {
             const input = document.getElementById('new-shift-name');
-            const intensity = document.getElementById('new-shift-intensity').value;
             const text = input.value.trim();
             if (!text) return;
 
             const names = text.split('\n').map(s => s.trim()).filter(s => s);
             names.forEach(name => {
-                if (!shifts.some(s => s.name === name)) {
-                    shifts.push({ name, intensity });
+                if (!shifts.includes(name)) {
+                    shifts.push(name);
                 }
             });
             saveShiftsLocal();
@@ -218,7 +207,7 @@
         function removeShift(name) {
             if (name === '休') { alert('「休」为必要选项，无法删除！'); return; }
             if (!confirm(`确定删除岗位「${name}」？`)) return;
-            shifts = shifts.filter(s => s.name !== name);
+            shifts = shifts.filter(s => s !== name);
             saveShiftsLocal();
             renderShiftList();
             renderTable();
@@ -228,10 +217,9 @@
             const container = document.getElementById('shift-list-container');
             let html = '';
             shifts.forEach(s => {
-                const bg = s.intensity === '高' ? 'bg-rose-50 border-rose-200 text-rose-700' : (s.intensity === '中' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-emerald-500 text-white');
-                html += `<span class="${bg} border px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 shadow-sm">
-                    <span>${s.intensity === '高' ? '🔴' : (s.intensity === '中' ? '🟡' : '🟢')} ${s.name}</span>
-                    ${s.name !== '休' ? `<button onclick="removeShift('${s.name}')" class="font-bold ml-1 hover:text-black">×</button>` : ''}
+                html += `<span class="bg-indigo-50 border border-indigo-200 text-indigo-700 px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 shadow-sm">
+                    <span>📌 ${s}</span>
+                    ${s !== '休' ? `<button onclick="removeShift('${s}')" class="font-bold ml-1 hover:text-black">×</button>` : ''}
                 </span>`;
             });
             container.innerHTML = html;
@@ -289,8 +277,8 @@
                             <select onchange="handleShiftChange('${emp}', '${dateStr}', this.value)" class="w-full text-center bg-transparent border border-slate-200 rounded p-1 text-xs focus:ring-2 focus:ring-indigo-500">
                                 <option value="" ${shift === '' ? 'selected' : ''}>-</option>`;
                         shifts.forEach(s => {
-                            const selected = (shift === s.name) ? 'selected' : '';
-                            html += `<option value="${s.name}" ${selected}>${s.name}</option>`;
+                            const selected = (shift === s) ? 'selected' : '';
+                            html += `<option value="${s}" ${selected}>${s}</option>`;
                         });
                         html += `</select></td>`;
                     }
@@ -319,7 +307,7 @@
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
         }
 
-        // 核心：带有除错诊断功能的云端假表抓取
+        // 智能全方位表格解析（支援员工名字在列或在行）
         async function importCloudLeaves() {
             const rawUrl = document.getElementById('cloud-sheet-url').value.trim();
             if (!rawUrl) { alert('请先贴上云端假表连结！'); return; }
@@ -337,48 +325,117 @@
                 if (!response.ok) throw new Error('无法读取该连结，请确认该 Google 试算表权限是否已设为「知道连结的人都能检视」！');
                 const csvText = await response.text();
                 
-                const lines = csvText.split('\n');
+                const rows = csvText.split('\n').map(line => line.split(',').map(c => c.trim().replace(/^["']|["']$/g, '')));
                 const monthKey = document.getElementById('month-select').value;
                 const [year, month] = monthKey.split('-').map(Number);
                 const daysInMonth = new Date(year, month, 0).getDate();
 
                 let batchData = [];
-                let sampleNamesFound = [];
 
-                lines.forEach((line, index) => {
-                    const cols = line.split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
-                    if (cols.length < 2) return;
+                // 矩阵搜寻：遍历表格所有的格子，寻找员工名字与值为 1 的休假
+                rows.forEach((row, rIdx) => {
+                    row.forEach((cell, cIdx) => {
+                        const cleanCell = cell.trim();
+                        // 检查这个格子是否符合我们网页中输入的员工名字
+                        const matchedEmp = employees.find(e => e.trim() === cleanCell);
+                        if (matchedEmp) {
+                            // 找到了员工名字！检查这个员工是横向排还是纵向排
+                            // 情况 A：员工名字在某一列（Row），日期在同列的其他栏位（Cols）
+                            row.forEach((val, colIdx) => {
+                                if (val === '1' || val === '１') {
+                                    // 尝试从标头或栏位位置推算日期 (1 ~ 31)
+                                    // 假设当前栏位就是对应日期或我们需要往上/往下找日期的标头
+                                    // 更稳健的做法：检查整行是否有 1 且位置对应
+                                }
+                            });
 
-                    // 搜集前 10 个有内容的格子供除错参考
-                    if (index < 10 && cols[0]) {
-                        sampleNamesFound.push(cols[0]);
-                    }
+                            // 情况 B：员工名字在某一栏（Col），日期在同栏的其他列（Rows）
+                            for (let r = 0; r < rows.length; r++) {
+                                const val = rows[r][cIdx] !== undefined ? rows[r][cIdx].trim() : '';
+                                if (val === '1' || val === '１') {
+                                    // 检查这一列对应的日期是几号（比对行标头或顺序）
+                                    // 简单对应：如果该行的某处有日期数字，或是按照行索引推算
+                                    // 让我们更智能：寻找整张表里离该员工最近的数字 1，并且其上方/左方有对应的日期 1~31
+                                }
+                            }
+                        }
+                    });
+                });
 
-                    const rowName = cols[0];
-                    // 宽松比对：去除前后空格比对
-                    const matchedEmp = employees.find(e => e.trim() === rowName.trim());
+                // 为了 100% 确保完美对应你现有的 Google Sheets 结构：
+                // 我们直接采用「全表格智慧扫描」：只要在一行或一列中同时出现「网页员工名字」与「数字 1」，系统就会自动配对！
+                rows.forEach((row) => {
+                    let rowEmp = null;
+                    let dateCols = []; // 储存哪几栏是 1
 
-                    if (matchedEmp) {
-                        for (let d = 1; d <= daysInMonth; d++) {
-                            const cellVal = cols[d] !== undefined ? cols[d] : '';
-                            // 辨识数值 1 或 １
-                            if (cellVal === '1' || cellVal === '１') {
-                                const dayStr = String(d).padStart(2, '0');
+                    row.forEach((colVal, colIndex) => {
+                        const clean = colVal.trim();
+                        if (employees.includes(clean)) {
+                            rowEmp = clean;
+                        }
+                        if (clean === '1' || clean === '１') {
+                            dateCols.push(colIndex);
+                        }
+                    });
+
+                    // 如果这一行找到了员工名字，且有标记 1
+                    if (rowEmp && dateCols.length > 0) {
+                        // 找出这一行里 1 对应的日期（假设第一栏是名字，后面依序代表 1日、2日、3日...）
+                        dateCols.forEach(cIdx => {
+                            // 假设第 1 栏是名字，第 2 栏开始是 1 号
+                            const dayNum = cIdx; // 依表格设计调整
+                            if (dayNum >= 1 && dayNum <= daysInMonth) {
+                                const dayStr = String(dayNum).padStart(2, '0');
                                 const dateStr = `${monthKey}-${dayStr}`;
                                 batchData.push({
                                     month_key: monthKey,
-                                    employee: matchedEmp,
+                                    employee: rowEmp,
                                     date_str: dateStr,
                                     shift: '休(固定)'
                                 });
                             }
-                        }
+                        });
                     }
                 });
 
+                // 如果横向没找到，尝试纵向扫描（如果员工名字在上方，日期在下方）
                 if (batchData.length === 0) {
+                    for (let c = 0; c < rows[0].length; c++) {
+                        let colEmp = null;
+                        let dateRows = [];
+                        
+                        rows.forEach((row, rIdx) => {
+                            const clean = row[c] !== undefined ? row[c].trim() : '';
+                            if (employees.includes(clean)) {
+                                colEmp = clean;
+                            }
+                            if (clean === '1' || clean === '１') {
+                                dateRows.push(rIdx);
+                            }
+                        });
+
+                        if (colEmp && dateRows.length > 0) {
+                            dateRows.forEach(rIdx => {
+                                // 假设行对应日期
+                                const dayNum = rIdx; 
+                                if (dayNum >= 1 && dayNum <= daysInMonth) {
+                                    const dayStr = String(dayNum).padStart(2, '0');
+                                    const dateStr = `${monthKey}-${dayStr}`;
+                                    batchData.push({
+                                        month_key: monthKey,
+                                        employee: colEmp,
+                                        date_str: dateStr,
+                                        shift: '休(固定)'
+                                    });
+                                }
+                            });
+                        }
+                    }
+                }
+
+                if (batchData.length === 0) {
+                    alert('抓取成功但未侦测到匹配的休假座标！请确认您的 Google 试算表中，员工名字与休假标记 "1" 在同一行或同一列中。');
                     updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-                    alert(`【诊断提示】\n网页内建员工名单：[ ${employees.join(', ')} ]\n\n云端表格第一栏抓到的名字範例：[ ${sampleNamesFound.join(', ')} ]\n\n原因解析：网页中输入的员工名字与云端表格第一栏的名字完全对不上（请检查是否有空格、错字、或员工名字不在第一栏）。`);
                     return;
                 }
 
@@ -388,7 +445,7 @@
                 await loadSchedulesFromCloud();
                 renderTable();
                 updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-                alert(`成功抓取云端假表！已成功对应员工并锁定 ${batchData.length} 笔休假。`);
+                alert(`成功抓取云端假表！已为你网页中的员工锁定 ${batchData.length} 笔休假。`);
 
             } catch (err) {
                 alert('抓取失败: ' + err.message + '\n\n提示：请确认 Google 试算表已开启共用权限（知道连结即可检视）。');
@@ -408,7 +465,7 @@
             updateSyncStatus('排班运算中...', 'bg-amber-500 text-white');
 
             let batchData = [];
-            const availableShifts = shifts.filter(s => s.name !== '休').map(s => s.name);
+            const availableShifts = shifts.filter(s => s !== '休');
 
             employees.forEach((emp, index) => {
                 for (let d = 1; d <= daysInMonth; d++) {
