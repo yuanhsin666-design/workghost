@@ -21,7 +21,7 @@
                 <span class="text-3xl">⚙️</span>
                 <div>
                     <h1 class="text-2xl font-bold">智能动态排班管理设置</h1>
-                    <p class="text-xs text-indigo-200 mt-1">云端假表同步：1 = 休假（名字横式显示）</p>
+                    <p class="text-xs text-indigo-200 mt-1">云端假表同步：1 = 休（支持手动任意修改）</p>
                 </div>
             </div>
             <div id="sync-status" class="text-xs bg-indigo-500 text-white px-4 py-2 rounded-full font-medium shadow-inner">
@@ -65,7 +65,7 @@
                         🗑️ 清空当月休假
                     </button>
                 </div>
-                <p class="text-xs text-slate-400">💡 提示：系统会自动比对云端假表中的员工姓名，抓取值为 **1** 的格子作为休假。</p>
+                <p class="text-xs text-slate-400">💡 提示：系统会自动比对云端假表中的员工姓名，抓取值为 **1** 的格子并显示为 **「休」**，所有格子皆支援随时手动修改。</p>
             </div>
 
             <!-- 岗位设置 -->
@@ -95,7 +95,7 @@
         <div class="bg-white shadow rounded-2xl p-6 space-y-4">
             <div class="flex justify-between items-center border-b border-slate-100 pb-4">
                 <h2 id="table-title" class="font-bold text-slate-800 text-lg">📊 排班工作表预览</h2>
-                <span class="text-xs text-slate-500">🔒 锁定状态：云端读取之员工休假无法更改</span>
+                <span class="text-xs text-slate-500">✍️ 所有格子皆可自由使用下拉选单手动修改</span>
             </div>
             <div class="overflow-x-auto min-h-[400px]">
                 <table id="schedule-table" class="w-full text-left border-collapse">
@@ -236,7 +236,7 @@
             }
         }
 
-        // 维持原本的表格布局，但名字改为正常的横式文字
+        // 渲染表格：所有格子皆为可修改的下拉选单（支援云端 1 显示为「休」）
         function renderTable() {
             const monthKey = document.getElementById('month-select').value;
             const [year, month] = monthKey.split('-').map(Number);
@@ -259,32 +259,39 @@
             }
             html += '</tr></thead>';
 
-            // 表身：每一列代表一位员工，名字正常横向显示
+            // 表身：每一列代表一位员工
             html += '<tbody class="divide-y divide-slate-100 text-sm">';
             employees.forEach(emp => {
                 html += `<tr class="hover:bg-slate-50/50">`;
-                // 员工名字横式呈现（取消垂直拆分）
                 html += `<td class="p-3 font-semibold text-slate-800 sticky left-0 bg-white z-10 shadow-sm whitespace-nowrap">${emp}</td>`;
 
                 for (let d = 1; d <= daysInMonth; d++) {
                     const dayStr = String(d).padStart(2, '0');
                     const dateStr = `${monthKey}-${dayStr}`;
                     const key = `${emp}_${dateStr}`;
-                    const shift = currentSchedules[key] || '';
-                    const isLocked = (shift === '休(固定)' || shift === '休');
+                    let shift = currentSchedules[key] || '';
 
-                    if (isLocked) {
-                        html += `<td class="p-1 text-center bg-rose-50 text-rose-700 font-bold text-xs" title="云端读取之员工休假，无法更改">🔒</td>`;
-                    } else {
-                        html += `<td class="p-1 text-center">
-                            <select onchange="handleShiftChange('${emp}', '${dateStr}', this.value)" class="w-full text-center bg-transparent border border-slate-200 rounded p-1 text-xs focus:ring-2 focus:ring-indigo-500">
-                                <option value="" ${shift === '' ? 'selected' : ''}>-</option>`;
-                        shifts.forEach(s => {
-                            const selected = (shift === s) ? 'selected' : '';
-                            html += `<option value="${s}" ${selected}>${s}</option>`;
-                        });
-                        html += `</select></td>`;
+                    // 兼容旧的锁定状态，统一显示为 "休"
+                    if (shift === '休(固定)') shift = '休';
+
+                    const isRest = (shift === '休');
+                    const selectBg = isRest ? 'bg-rose-50 text-rose-700 font-bold border-rose-300' : 'bg-transparent border-slate-200';
+
+                    html += `<td class="p-1 text-center">
+                        <select onchange="handleShiftChange('${emp}', '${dateStr}', this.value)" class="w-full text-center border rounded p-1 text-xs focus:ring-2 focus:ring-indigo-500 ${selectBg}">
+                            <option value="" ${shift === '' ? 'selected' : ''}>-</option>`;
+                    
+                    shifts.forEach(s => {
+                        const selected = (shift === s) ? 'selected' : '';
+                        html += `<option value="${s}" ${selected}>${s}</option>`;
+                    });
+                    
+                    // 如果当前排班值不在预设岗位清单中（例如其他自订文字），也能正常保留显示
+                    if (shift && !shifts.includes(shift)) {
+                        html += `<option value="${shift}" selected>${shift}</option>`;
                     }
+
+                    html += `</select></td>`;
                 }
                 html += `</tr>`;
             });
@@ -308,8 +315,10 @@
                 currentSchedules[`${employee}_${dateStr}`] = shift;
             }
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+            renderTable(); // 重新整理以即时套用休假的红色高亮样式
         }
 
+        // 智慧解析云端假表（支援弹性比对，1 自动转为「休」）
         async function importCloudLeaves() {
             const rawUrl = document.getElementById('cloud-sheet-url').value.trim();
             if (!rawUrl) { alert('请先贴上云端假表连结！'); return; }
@@ -336,6 +345,7 @@
                 let dayColMap = {}; 
                 let empRowMap = {}; 
 
+                // 寻找日期栏位（搜寻 1~31）
                 rows.forEach((row, rIdx) => {
                     row.forEach((cell, cIdx) => {
                         const clean = cell.replace(/日|號/g, '').trim();
@@ -346,12 +356,15 @@
                     });
                 });
 
+                // 寻找员工名字（只要网页上的员工名字包含在格子中或完全相符即认出）
                 rows.forEach((row, rIdx) => {
                     row.forEach((cell, cIdx) => {
                         const clean = cell.trim();
-                        if (employees.includes(clean)) {
-                            empRowMap[rIdx] = clean;
-                        }
+                        employees.forEach(emp => {
+                            if (clean === emp || clean.includes(emp)) {
+                                empRowMap[rIdx] = emp;
+                            }
+                        });
                     });
                 });
 
@@ -363,6 +376,7 @@
                             const dayNum = dayColMap[cIdx];
                             if (dayNum >= 1 && dayNum <= daysInMonth) {
                                 const val = rowData[cIdx] !== undefined ? rowData[cIdx].trim() : '';
+                                // 只要云端格子填的是 1 或 １，就判定为休假
                                 if (val === '1' || val === '１') {
                                     const dayStr = String(dayNum).padStart(2, '0');
                                     const dateStr = `${monthKey}-${dayStr}`;
@@ -370,7 +384,7 @@
                                         month_key: monthKey,
                                         employee: empName,
                                         date_str: dateStr,
-                                        shift: '休(固定)'
+                                        shift: '休'
                                     });
                                 }
                             }
@@ -379,7 +393,7 @@
                 });
 
                 if (batchData.length === 0) {
-                    alert('抓取成功但未侦测到匹配的休假座标！请确认：\n1. Google 试算表内的员工名字与网页完全一致。\n2. 试算表上有標示日期（1~31），且休假格子填的是数字 1。');
+                    alert('未侦测到匹配的休假座标！请确认：\n1. Google 试算表内的员工名字与网页吻合。\n2. 试算表上有标示日期（1~31），且休假格子填的是数字 1。');
                     updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
                     return;
                 }
@@ -390,7 +404,7 @@
                 await loadSchedulesFromCloud();
                 renderTable();
                 updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-                alert(`成功抓取云端假表！已为你锁定 ${batchData.length} 笔休假。`);
+                alert(`成功抓取云端假表！已为你汇入 ${batchData.length} 笔休假（显示为「休」）。`);
 
             } catch (err) {
                 alert('抓取失败: ' + err.message + '\n\n提示：请确认 Google 试算表已开启共用权限（知道连结即可检视）。');
@@ -418,7 +432,8 @@
                     const dateStr = `${monthKey}-${dayStr}`;
                     const key = `${emp}_${dateStr}`;
                     
-                    if (currentSchedules[key] === '休(固定)' || currentSchedules[key] === '休') continue;
+                    // 如果原本已经是休假的格子，智能排班时不覆盖它
+                    if (currentSchedules[key] === '休' || currentSchedules[key] === '休(固定)') continue;
 
                     const assignedShift = availableShifts[(d + index) % availableShifts.length];
                     batchData.push({ month_key: monthKey, employee: emp, date_str: dateStr, shift: assignedShift });
@@ -439,7 +454,9 @@
             const monthKey = document.getElementById('month-select').value;
             updateSyncStatus('清空中...', 'bg-rose-500 text-white');
 
-            const { error } = await _supabase.from('schedules').delete().eq('month_key', monthKey).eq('shift', '休(固定)');
+            // 同时清除 '休' 与旧的 '休(固定)'
+            await _supabase.from('schedules').delete().eq('month_key', monthKey).eq('shift', '休(固定)');
+            const { error } = await _supabase.from('schedules').delete().eq('month_key', monthKey).eq('shift', '休');
             if (error) { alert('清空失败: ' + error.message); return; }
 
             await loadSchedulesFromCloud();
