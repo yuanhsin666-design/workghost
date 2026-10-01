@@ -481,35 +481,138 @@
                 let debugFoundRows = [];
 
               
-// 1. 寻找日期座标（通常在標題列附近，我們找包含 1~31 數字的欄位）
-rows.forEach((row, rIdx) => {
-    row.forEach((cell, cIdx) => {
-        const clean = cell.replace(/日|號|号/g, '').trim();
-        const num = parseInt(clean, 10);
-        // 限制日期必須在合理欄位，或者維持原判斷
-        if (!isNaN(num) && num >= 1 && num <= 31) {
-            dayColMap[cIdx] = num;
-        }
-    });
-});
+// 智慧解析云端假表（全域自動搜尋名字版）
+async function importCloudLeaves() {
+    const rawUrl = document.getElementById('cloud-sheet-url').value.trim();
+    if (!rawUrl) { alert('请先贴上云端假表连结！'); return; }
+    if (employees.length === 0) { alert('请先在上方「员工管理」添加员工名单！'); return; }
 
-// 2. 寻找员工列座标：放寬為整行搜尋，但排除掉純數字或空白
-rows.forEach((row, rIdx) => {
-    row.forEach((cell, cIdx) => {
-        if (!cell) return;
-        const cellVal = cell.toString().toLowerCase().trim();
+    let csvUrl = rawUrl;
+    if (rawUrl.includes('/edit')) {
+        csvUrl = rawUrl.split('/edit')[0] + '/export?format=csv';
+    }
+
+    updateSyncStatus('读取云端假表中...', 'bg-amber-500 text-white');
+
+    try {
+        const response = await fetch(csvUrl);
+        if (!response.ok) throw new Error('无法读取该连结，请确认 Google 试算表权限是否已设为「知道连结的人都能检视」！');
+        const csvText = await response.text();
         
-        // 略過純數字（避免把日期當成員工名字）
-        if (!isNaN(cellVal) && cellVal !== '') return;
+        // 解析 CSV
+        const rows = csvText.split('\n').map(line => {
+            let result = [];
+            let inQuotes = false;
+            let current = '';
+            for (let i = 0; i < line.length; i++) {
+                let c = line[i];
+                if (c === '"') {
+                    inQuotes = !inQuotes;
+                } else if (c === ',' && !inQuotes) {
+                    result.push(current.trim().replace(/^["']|["']$/g, ''));
+                    current = '';
+                } else {
+                    current += c;
+                }
+            }
+            result.push(current.trim().replace(/^["']|["']$/g, ''));
+            return result;
+        });
 
-        employees.forEach(emp => {
-            if (emp.length > 0 && cellVal.includes(emp.toLowerCase())) {
-                empRowMap[rIdx] = emp;
-                debugFoundRows.push(`行 ${rIdx} 对应员工: ${emp} (内容: ${cell})`);
+        const monthKey = document.getElementById('month-select').value;
+        const [year, month] = monthKey.split('-').map(Number);
+        const daysInMonth = new Date(year, month, 0).getDate();
+
+        let dayColMap = {}; 
+        let empRowMap = {}; 
+        let debugFoundRows = [];
+
+        // 1. 自動尋找日期座標（掃描全表，找出內容是 1~31 的欄位）
+        rows.forEach((row, rIdx) => {
+            row.forEach((cell, cIdx) => {
+                if (!cell) return;
+                const clean = cell.toString().replace(/日|號|号/g, '').trim();
+                const num = parseInt(clean, 10);
+                if (!isNaN(num) && num >= 1 && num <= 31) {
+                    dayColMap[cIdx] = num;
+                }
+            });
+        });
+
+        // 2. 【全面自動尋找名字】：掃描整張表的每一個格子，只要裡面包含了你系統中的員工名字就抓下來！
+        rows.forEach((row, rIdx) => {
+            row.forEach((cell, cIdx) => {
+                if (!cell) return;
+                const cellVal = cell.toString().toLowerCase().trim();
+                
+                employees.forEach(emp => {
+                    if (emp && emp.length > 0) {
+                        const targetEmp = emp.toLowerCase().trim();
+                        // 支援「完全相符」或「部分包含」（例如格子裡寫的是全名或帶有稱號）
+                        if (cellVal === targetEmp || cellVal.includes(targetEmp)) {
+                            // 如果這行還沒被對應過，就把它綁定給這個員工
+                            if (!empRowMap[rIdx]) {
+                                empRowMap[rIdx] = emp;
+                                debugFoundRows.push(`第 ${rIdx} 行對應員工: [${emp}] (格內文字: ${cell})`);
+                            }
+                        }
+                    }
+                });
+            });
+        });
+
+        let batchData = [];
+        Object.keys(empRowMap).forEach(rIdx => {
+            const empName = empRowMap[rIdx];
+            const rowData = rows[rIdx];
+            if (rowData) {
+                Object.keys(dayColMap).forEach(cIdx => {
+                    const dayNum = dayColMap[cIdx];
+                    if (dayNum >= 1 && dayNum <= daysInMonth) {
+                        const val = rowData[cIdx] !== undefined ? rowData[cIdx].trim() : '';
+                        // 只要填了 1、１、true 或 休，就視為休假
+                        if (val === '1' || val === '１' || val.toLowerCase() === 'true' || val === '休') {
+                            const dayStr = String(dayNum).padStart(2, '0');
+                            const dateStr = `${monthKey}-${dayStr}`;
+                            batchData.push({
+                                month_key: monthKey,
+                                employee: empName,
+                                date_str: dateStr,
+                                shift: '休'
+                            });
+                        }
+                    }
+                });
             }
         });
-    });
-});
+
+        if (batchData.length === 0) {
+            let debugInfo = [
+                `❌ <strong>未偵測到匹配的休假座標！</strong>`,
+                `📋 <strong>系統目前已登記的員工：</strong> ${employees.join(', ')}`,
+                `🔍 <strong>試算表全表掃描結果：</strong> ${debugFoundRows.length > 0 ? debugFoundRows.join('<br>') : '完全找不到任何相符的名字'}`,
+                `💡 <strong>排查建議：</strong>`,
+                `1. 請確認上方「員工管理」輸入的名字，是否跟 Google 試算表中間區塊的字一模一樣。`,
+                `2. 確認假表內的休假格子確實填了數字 <strong>1</strong>。`
+            ];
+            showModal('⚠️ 假表匯入除錯診斷', debugInfo);
+            updateSyncStatus('已同步雲端', 'bg-emerald-500 text-white');
+            return;
+        }
+
+        const { error } = await _supabase.from('schedules').upsert(batchData, { onConflict: 'employee,date_str' });
+        if (error) { alert('寫入假表失敗: ' + error.message); return; }
+
+        await loadSchedulesFromCloud();
+        renderTable();
+        updateSyncStatus('已同步雲端', 'bg-emerald-500 text-white');
+        alert(`🎉 成功抓取雲端假表！已成功從中間區塊匯入 ${batchData.length} 筆休假。`);
+
+    } catch (err) {
+        alert('抓取失敗: ' + err.message);
+        updateSyncStatus('已同步雲端', 'bg-emerald-500 text-white');
+    }
+}
 
                 let batchData = [];
                 Object.keys(empRowMap).forEach(rIdx => {
