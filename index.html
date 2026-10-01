@@ -523,6 +523,9 @@ async function importCloudLeaves() {
         const [year, month] = monthKey.split('-').map(Number);
         const daysInMonth = new Date(year, month, 0).getDate();
 
+        // 🟢 加上這行，把整張表印在主控台讓你檢查
+        console.log("【Google 試算表原始資料】", rows);
+
         let dayColMap = {}; 
         let empRowMap = {}; 
         let debugFoundRows = [];
