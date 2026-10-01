@@ -21,7 +21,7 @@
                 <span class="text-3xl">⚙️</span>
                 <div>
                     <h1 class="text-2xl font-bold">智能动态排班管理设置</h1>
-                    <p class="text-xs text-indigo-200 mt-1">云端假表同步：1 = 休（支持手动任意修改）</p>
+                    <p class="text-xs text-indigo-200 mt-1">云端假表同步：1 = 休 ｜ 支援手动切换与重复/连排校验</p>
                 </div>
             </div>
             <div id="sync-status" class="text-xs bg-indigo-500 text-white px-4 py-2 rounded-full font-medium shadow-inner">
@@ -65,7 +65,7 @@
                         🗑️ 清空当月休假
                     </button>
                 </div>
-                <p class="text-xs text-slate-400">💡 提示：系统会自动比对云端假表中的员工姓名，抓取值为 **1** 的格子并显示为 **「休」**，所有格子皆支援随时手动修改。</p>
+                <p class="text-xs text-slate-400">💡 提示：系统会自动比对云端假表中的员工姓名，抓取值为 **1** 的格子并显示为 **「休」**。</p>
             </div>
 
             <!-- 岗位设置 -->
@@ -81,11 +81,20 @@
             </div>
 
             <!-- 操作按钮列 -->
-            <div class="flex flex-wrap gap-3 pt-2">
+            <div class="flex flex-wrap gap-3 pt-2 items-center">
                 <button onclick="autoSchedule()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition shadow-sm">
                     ✨ 执行智能排班
                 </button>
-                <button onclick="clearMonthData()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-medium transition">
+                <button onclick="toggleEditMode()" id="edit-mode-btn" class="bg-amber-500 hover:bg-amber-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition shadow-sm">
+                    ✍️ 开启手动修改
+                </button>
+                <button onclick="validateDuplicateShifts()" class="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition shadow-sm">
+                    🔍 校验排班重复岗位
+                </button>
+                <button onclick="validateConsecutiveShifts()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition shadow-sm">
+                    ⚠️ 校验连排岗位
+                </button>
+                <button onclick="clearMonthData()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-medium transition ml-auto">
                     重置当月资料
                 </button>
             </div>
@@ -95,12 +104,28 @@
         <div class="bg-white shadow rounded-2xl p-6 space-y-4">
             <div class="flex justify-between items-center border-b border-slate-100 pb-4">
                 <h2 id="table-title" class="font-bold text-slate-800 text-lg">📊 排班工作表预览</h2>
-                <span class="text-xs text-slate-500">✍️ 所有格子皆可自由使用下拉选单手动修改</span>
+                <span id="mode-tip" class="text-xs text-amber-600 font-medium">🔒 目前为检视模式（点选上方「开启手动修改」即可编辑）</span>
             </div>
             <div class="overflow-x-auto min-h-[400px]">
                 <table id="schedule-table" class="w-full text-left border-collapse">
                     <!-- 动态生成 -->
                 </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 校验结果弹窗视窗 -->
+    <div id="modal-container" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl">
+            <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 id="modal-title" class="font-bold text-slate-800 text-base">校验结果</h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 text-lg font-bold">×</button>
+            </div>
+            <div id="modal-content" class="max-h-96 overflow-y-auto text-sm text-slate-700 space-y-2">
+                <!-- 动态生成校验内容 -->
+            </div>
+            <div class="flex justify-end pt-2">
+                <button onclick="closeModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium">关闭</button>
             </div>
         </div>
     </div>
@@ -115,6 +140,7 @@
         let employees = [];
         let shifts = ['休', 'OL FB JY', 'MT XO SH YS', '支援'];
         let currentSchedules = {};
+        let isEditMode = false; // 预设关闭手动修改，只显示纯文字或标籤
 
         async function init() {
             updateSyncStatus('连线中...', 'bg-amber-500 text-white');
@@ -236,7 +262,26 @@
             }
         }
 
-        // 渲染表格：所有格子皆为可修改的下拉选单（支援云端 1 显示为「休」）
+        // 切换手动修改模式
+        function toggleEditMode() {
+            isEditMode = !isEditMode;
+            const btn = document.getElementById('edit-mode-btn');
+            const tip = document.getElementById('mode-tip');
+            if (isEditMode) {
+                btn.className = "bg-rose-500 hover:bg-rose-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition shadow-sm";
+                btn.innerText = "🔒 关闭手动修改";
+                tip.className = "text-xs text-rose-600 font-medium";
+                tip.innerText = "✍️ 目前为「手动修改模式」，可点选格子随时切换班别";
+            } else {
+                btn.className = "bg-amber-500 hover:bg-amber-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition shadow-sm";
+                btn.innerText = "✍️ 开启手动修改";
+                tip.className = "text-xs text-amber-600 font-medium";
+                tip.innerText = "🔒 目前为检视模式（点选上方「开启手动修改」即可编辑）";
+            }
+            renderTable();
+        }
+
+        // 渲染表格
         function renderTable() {
             const monthKey = document.getElementById('month-select').value;
             const [year, month] = monthKey.split('-').map(Number);
@@ -251,7 +296,6 @@
             }
 
             let html = '';
-            // 表头：第一栏是「员工姓名」，后面是 1号 到 31号
             html += '<thead><tr class="bg-slate-100 border-b border-slate-200 text-xs text-slate-600 uppercase tracking-wider">';
             html += '<th class="p-3 sticky left-0 bg-slate-100 z-10 w-32 text-center">员工姓名</th>';
             for (let d = 1; d <= daysInMonth; d++) {
@@ -259,7 +303,6 @@
             }
             html += '</tr></thead>';
 
-            // 表身：每一列代表一位员工
             html += '<tbody class="divide-y divide-slate-100 text-sm">';
             employees.forEach(emp => {
                 html += `<tr class="hover:bg-slate-50/50">`;
@@ -270,28 +313,35 @@
                     const dateStr = `${monthKey}-${dayStr}`;
                     const key = `${emp}_${dateStr}`;
                     let shift = currentSchedules[key] || '';
-
-                    // 兼容旧的锁定状态，统一显示为 "休"
                     if (shift === '休(固定)') shift = '休';
 
                     const isRest = (shift === '休');
-                    const selectBg = isRest ? 'bg-rose-50 text-rose-700 font-bold border-rose-300' : 'bg-transparent border-slate-200';
 
-                    html += `<td class="p-1 text-center">
-                        <select onchange="handleShiftChange('${emp}', '${dateStr}', this.value)" class="w-full text-center border rounded p-1 text-xs focus:ring-2 focus:ring-indigo-500 ${selectBg}">
-                            <option value="" ${shift === '' ? 'selected' : ''}>-</option>`;
-                    
-                    shifts.forEach(s => {
-                        const selected = (shift === s) ? 'selected' : '';
-                        html += `<option value="${s}" ${selected}>${s}</option>`;
-                    });
-                    
-                    // 如果当前排班值不在预设岗位清单中（例如其他自订文字），也能正常保留显示
-                    if (shift && !shifts.includes(shift)) {
-                        html += `<option value="${shift}" selected>${shift}</option>`;
+                    if (!isEditMode) {
+                        // 检视模式：仅显示文字标签
+                        let badgeClass = 'text-slate-400';
+                        if (isRest) badgeClass = 'bg-rose-100 text-rose-700 font-bold px-1.5 py-0.5 rounded text-xs';
+                        else if (shift) badgeClass = 'bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-xs font-medium';
+
+                        html += `<td class="p-2 text-center"><span class="${badgeClass}">${shift || '-'}</span></td>`;
+                    } else {
+                        // 手动修改模式：出现下拉选单
+                        const selectBg = isRest ? 'bg-rose-50 text-rose-700 font-bold border-rose-300' : 'bg-transparent border-slate-200';
+                        html += `<td class="p-1 text-center">
+                            <select onchange="handleShiftChange('${emp}', '${dateStr}', this.value)" class="w-full text-center border rounded p-1 text-xs focus:ring-2 focus:ring-indigo-500 ${selectBg}">
+                                <option value="" ${shift === '' ? 'selected' : ''}>-</option>`;
+                        
+                        shifts.forEach(s => {
+                            const selected = (shift === s) ? 'selected' : '';
+                            html += `<option value="${s}" ${selected}>${s}</option>`;
+                        });
+                        
+                        if (shift && !shifts.includes(shift)) {
+                            html += `<option value="${shift}" selected>${shift}</option>`;
+                        }
+
+                        html += `</select></td>`;
                     }
-
-                    html += `</select></td>`;
                 }
                 html += `</tr>`;
             });
@@ -315,10 +365,89 @@
                 currentSchedules[`${employee}_${dateStr}`] = shift;
             }
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-            renderTable(); // 重新整理以即时套用休假的红色高亮样式
+            renderTable();
         }
 
-        // 智慧解析云端假表（支援弹性比对，1 自动转为「休」）
+        // 校验1：排班重复岗位（检查每天各岗位是否被指派了多人，或特定业务逻辑冲突）
+        function validateDuplicateShifts() {
+            const monthKey = document.getElementById('month-select').value;
+            const [year, month] = monthKey.split('-').map(Number);
+            const daysInMonth = new Date(year, month, 0).getDate();
+
+            let issues = [];
+
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dayStr = String(d).padStart(2, '0');
+                const dateStr = `${monthKey}-${dayStr}`;
+                
+                // 收集当天每个岗位有谁值班
+                let shiftCount = {};
+                employees.forEach(emp => {
+                    const shift = currentSchedules[`${emp}_${dateStr}`];
+                    if (shift && shift !== '休') {
+                        if (!shiftCount[shift]) shiftCount[shift] = [];
+                        shiftCount[shift].push(emp);
+                    }
+                });
+
+                // 范例校验规则：如果某些特定岗位一天内被同一人重复或有异常，可在此记录
+                // 这里扩充为：列出每一天各岗位分配状况，并检查是否有明显冲突或重复指派
+                Object.keys(shiftCount).forEach(s => {
+                    if (shiftCount[s].length > 2) {
+                        issues.push(`📅 ${month}月${d}日：岗位 **[${s}]** 指派人数较多（共 ${shiftCount[s].length} 人：${shiftCount[s].join(', ')}）`);
+                    }
+                });
+            }
+
+            showModal('🔍 排班重复岗位校验结果', issues.length > 0 ? issues : ['✨ 太棒了！未侦测到异常的岗位重复指派情况。']);
+        }
+
+        // 校验2：连排岗位（检查员工是否连续多天值班无休息，或连续岗位过长）
+        function validateConsecutiveShifts() {
+            let issues = [];
+            const monthKey = document.getElementById('month-select').value;
+            const [year, month] = monthKey.split('-').map(Number);
+            const daysInMonth = new Date(year, month, 0).getDate();
+
+            employees.forEach(emp => {
+                let consecutiveDays = 0;
+                let lastShift = '';
+
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const dayStr = String(d).padStart(2, '0');
+                    const dateStr = `${monthKey}-${dayStr}`;
+                    const shift = currentSchedules[`${emp}_${dateStr}`] || '';
+
+                    if (shift && shift !== '休') {
+                        consecutiveDays++;
+                        if (consecutiveDays >= 5) {
+                            issues.push(`⚠️ 员工 **${emp}** 自 ${d - consecutiveDays + 1}日 至 ${d}日 已**连续上班 ${consecutiveDays} 天**未休息。`);
+                        }
+                    } else {
+                        consecutiveDays = 0;
+                    }
+                }
+            });
+
+            showModal('⚠️ 连排岗位/过劳校验结果', issues.length > 0 ? issues : ['✨ 太棒了！所有员工的连续排班天数均在合理范围内（无连续上班>=5天）。']);
+        }
+
+        function showModal(title, contentArray) {
+            document.getElementById('modal-title').innerText = title;
+            const container = document.getElementById('modal-content');
+            let html = '';
+            contentArray.forEach(item => {
+                html += `<div class="p-3 bg-slate-50 rounded-xl border border-slate-100">${item}</div>`;
+            });
+            container.innerHTML = html;
+            document.getElementById('modal-container').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('modal-container').classList.add('hidden');
+        }
+
+        // 智慧解析云端假表
         async function importCloudLeaves() {
             const rawUrl = document.getElementById('cloud-sheet-url').value.trim();
             if (!rawUrl) { alert('请先贴上云端假表连结！'); return; }
@@ -345,7 +474,6 @@
                 let dayColMap = {}; 
                 let empRowMap = {}; 
 
-                // 寻找日期栏位（搜寻 1~31）
                 rows.forEach((row, rIdx) => {
                     row.forEach((cell, cIdx) => {
                         const clean = cell.replace(/日|號/g, '').trim();
@@ -356,7 +484,6 @@
                     });
                 });
 
-                // 寻找员工名字（只要网页上的员工名字包含在格子中或完全相符即认出）
                 rows.forEach((row, rIdx) => {
                     row.forEach((cell, cIdx) => {
                         const clean = cell.trim();
@@ -376,7 +503,6 @@
                             const dayNum = dayColMap[cIdx];
                             if (dayNum >= 1 && dayNum <= daysInMonth) {
                                 const val = rowData[cIdx] !== undefined ? rowData[cIdx].trim() : '';
-                                // 只要云端格子填的是 1 或 １，就判定为休假
                                 if (val === '1' || val === '１') {
                                     const dayStr = String(dayNum).padStart(2, '0');
                                     const dateStr = `${monthKey}-${dayStr}`;
@@ -393,7 +519,7 @@
                 });
 
                 if (batchData.length === 0) {
-                    alert('未侦测到匹配的休假座标！请确认：\n1. Google 试算表内的员工名字与网页吻合。\n2. 试算表上有标示日期（1~31），且休假格子填的是数字 1。');
+                    alert('未侦测到匹配的休假座标！请确认 Google 试算表内的日期与员工姓名正确，且休假值为 1。');
                     updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
                     return;
                 }
@@ -404,10 +530,10 @@
                 await loadSchedulesFromCloud();
                 renderTable();
                 updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-                alert(`成功抓取云端假表！已为你汇入 ${batchData.length} 笔休假（显示为「休」）。`);
+                alert(`成功抓取云端假表！已汇入 ${batchData.length} 笔休假。`);
 
             } catch (err) {
-                alert('抓取失败: ' + err.message + '\n\n提示：请确认 Google 试算表已开启共用权限（知道连结即可检视）。');
+                alert('抓取失败: ' + err.message);
                 updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
             }
         }
@@ -432,7 +558,6 @@
                     const dateStr = `${monthKey}-${dayStr}`;
                     const key = `${emp}_${dateStr}`;
                     
-                    // 如果原本已经是休假的格子，智能排班时不覆盖它
                     if (currentSchedules[key] === '休' || currentSchedules[key] === '休(固定)') continue;
 
                     const assignedShift = availableShifts[(d + index) % availableShifts.length];
@@ -454,7 +579,6 @@
             const monthKey = document.getElementById('month-select').value;
             updateSyncStatus('清空中...', 'bg-rose-500 text-white');
 
-            // 同时清除 '休' 与旧的 '休(固定)'
             await _supabase.from('schedules').delete().eq('month_key', monthKey).eq('shift', '休(固定)');
             const { error } = await _supabase.from('schedules').delete().eq('month_key', monthKey).eq('shift', '休');
             if (error) { alert('清空失败: ' + error.message); return; }
