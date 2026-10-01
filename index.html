@@ -493,20 +493,22 @@ rows.forEach((row, rIdx) => {
     });
 });
 
-// 2. 寻找员工列座标：【強制限制只能在表格的前兩欄（索引 0 或 1）尋找員工姓名】
+// 2. 寻找员工列座标：放寬為整行搜尋，但排除掉純數字或空白
 rows.forEach((row, rIdx) => {
-    // 檢查前兩欄是否有資料
-    for (let cIdx = 0; cIdx <= 1 && cIdx < row.length; cIdx++) {
-        const cell = row[cIdx] || '';
-        const cellVal = cell.toLowerCase().trim();
+    row.forEach((cell, cIdx) => {
+        if (!cell) return;
+        const cellVal = cell.toString().toLowerCase().trim();
         
+        // 略過純數字（避免把日期當成員工名字）
+        if (!isNaN(cellVal) && cellVal !== '') return;
+
         employees.forEach(emp => {
-            if (emp.length > 0 && cellVal === emp.toLowerCase()) {
+            if (emp.length > 0 && cellVal.includes(emp.toLowerCase())) {
                 empRowMap[rIdx] = emp;
                 debugFoundRows.push(`行 ${rIdx} 对应员工: ${emp} (内容: ${cell})`);
             }
         });
-    }
+    });
 });
 
                 let batchData = [];
