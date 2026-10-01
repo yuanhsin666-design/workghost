@@ -480,29 +480,34 @@
                 let empRowMap = {}; 
                 let debugFoundRows = [];
 
-                // 1. 寻找日期座标（栏位中包含 1~31 的数字）
-                rows.forEach((row, rIdx) => {
-                    row.forEach((cell, cIdx) => {
-                        const clean = cell.replace(/日|號|号/g, '').trim();
-                        const num = parseInt(clean, 10);
-                        if (!isNaN(num) && num >= 1 && num <= 31) {
-                            dayColMap[cIdx] = num;
-                        }
-                    });
-                });
+              
+// 1. 寻找日期座标（通常在標題列附近，我們找包含 1~31 數字的欄位）
+rows.forEach((row, rIdx) => {
+    row.forEach((cell, cIdx) => {
+        const clean = cell.replace(/日|號|号/g, '').trim();
+        const num = parseInt(clean, 10);
+        // 限制日期必須在合理欄位，或者維持原判斷
+        if (!isNaN(num) && num >= 1 && num <= 31) {
+            dayColMap[cIdx] = num;
+        }
+    });
+});
 
-                // 2. 寻找员工列座标（支援包含匹配）
-                rows.forEach((row, rIdx) => {
-                    row.forEach((cell, cIdx) => {
-                        const cellVal = cell.toLowerCase();
-                        employees.forEach(emp => {
-                            if (cellVal.includes(emp.toLowerCase()) && emp.length > 0) {
-                                empRowMap[rIdx] = emp;
-                                debugFoundRows.push(`行 ${rIdx} 对应员工: ${emp} (内容: ${cell})`);
-                            }
-                        });
-                    });
-                });
+// 2. 寻找员工列座标：【強制限制只能在表格的前兩欄（索引 0 或 1）尋找員工姓名】
+rows.forEach((row, rIdx) => {
+    // 檢查前兩欄是否有資料
+    for (let cIdx = 0; cIdx <= 1 && cIdx < row.length; cIdx++) {
+        const cell = row[cIdx] || '';
+        const cellVal = cell.toLowerCase().trim();
+        
+        employees.forEach(emp => {
+            if (emp.length > 0 && cellVal === emp.toLowerCase()) {
+                empRowMap[rIdx] = emp;
+                debugFoundRows.push(`行 ${rIdx} 对应员工: ${emp} (内容: ${cell})`);
+            }
+        });
+    }
+});
 
                 let batchData = [];
                 Object.keys(empRowMap).forEach(rIdx => {
