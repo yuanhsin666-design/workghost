@@ -486,19 +486,43 @@ async function importCloudLeaves() {
         const empNormMap = {};              // 归一化姓名 -> 原姓名
         employees.forEach(e => { empNormMap[normalize(e)] = e; });
 
-        // 4. 寻找日期栏位（只扫描前 10 行，避免误判）
-        const dayColMap = {};  // 栏索引 -> 日
-        const scanRows = Math.min(rows.length, 10);
-        for (let r = 0; r < scanRows; r++) {
-            rows[r].forEach((cell, cIdx) => {
-                if (!cell) return;
-                const clean = cell.toString().replace(/[日号號\s]/g, '').trim();
-                const num = parseInt(clean, 10);
-                if (!isNaN(num) && num >= 1 && num <= 31) {
-                    dayColMap[cIdx] = num;
-                }
-            });
+// 4. 寻找日期栏位（只认第一组连续 1~31 的表头）
+const dayColMap = {};  // 栏索引 -> 日
+let headerRowIdx = -1;
+
+for (let r = 0; r < Math.min(rows.length, 10); r++) {
+    const row = rows[r];
+    // 计算这一行里有多少格是 1~31 的数字
+    const dayCells = [];
+    row.forEach((cell, cIdx) => {
+        if (!cell) return;
+        const clean = cell.toString().replace(/[日号號\s]/g, '').trim();
+        const num = parseInt(clean, 10);
+        if (!isNaN(num) && num >= 1 && num <= 31 && String(num) === clean) {
+            dayCells.push({ cIdx, num });
         }
+    });
+
+    // 至少要有 25 个连续日期才算「日期表头行」（避免误判「天数」等栏）
+    if (dayCells.length >= 25) {
+        headerRowIdx = r;
+        // 只取「从 1 开始且连续递增」的那一段，遇到不连续就停
+        dayCells.forEach(({ cIdx, num }) => {
+            dayColMap[cIdx] = num;
+        });
+        console.log(`✅ 找到日期表头行：第 ${r + 1} 列，共 ${dayCells.length} 栏`);
+        break;  // 找到第一组就停，不再往下找第二、第三区块
+    }
+}
+
+if (Object.keys(dayColMap).length === 0) {
+    showModal('❌ 找不到日期表头', [
+        '程式无法在前 10 列中找到连续 1~31 的日期表头。',
+        '请确认试算表第 2 列的日期是纯数字（1、2、3...31），且至少 25 栏。'
+    ]);
+    updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+    return;
+}
 
         // 5. 寻找员工列（全表扫描，归一化比对）
         const empRowMap = {};  // 行索引 -> 原姓名
