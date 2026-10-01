@@ -65,7 +65,7 @@
                         🗑️ 清空当月休假
                     </button>
                 </div>
-                <p class="text-xs text-slate-400">💡 提示：系统会自动比对云端假表中的员工姓名，抓取值为 **1** 的格子并显示为 **「休」**。</p>
+                <p class="text-xs text-slate-400">💡 提示：请确保 Google 试算表已设为「知道连结的人都能检视」，且员工姓名与上方列表相符，休假格填入 **1**。</p>
             </div>
 
             <!-- 岗位设置 -->
@@ -114,15 +114,15 @@
         </div>
     </div>
 
-    <!-- 校验结果弹窗视窗 -->
+    <!-- 校验与除错结果弹窗视窗 -->
     <div id="modal-container" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl">
             <div class="flex justify-between items-center border-b border-slate-100 pb-3">
-                <h3 id="modal-title" class="font-bold text-slate-800 text-base">校验结果</h3>
+                <h3 id="modal-title" class="font-bold text-slate-800 text-base">系统讯息</h3>
                 <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 text-lg font-bold">×</button>
             </div>
             <div id="modal-content" class="max-h-96 overflow-y-auto text-sm text-slate-700 space-y-2">
-                <!-- 动态生成校验内容 -->
+                <!-- 动态生成内容 -->
             </div>
             <div class="flex justify-end pt-2">
                 <button onclick="closeModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium">关闭</button>
@@ -140,7 +140,7 @@
         let employees = [];
         let shifts = ['休', 'OL FB JY', 'MT XO SH YS', '支援'];
         let currentSchedules = {};
-        let isEditMode = false; // 预设关闭手动修改，只显示纯文字或标籤
+        let isEditMode = false;
 
         async function init() {
             updateSyncStatus('连线中...', 'bg-amber-500 text-white');
@@ -262,7 +262,6 @@
             }
         }
 
-        // 切换手动修改模式
         function toggleEditMode() {
             isEditMode = !isEditMode;
             const btn = document.getElementById('edit-mode-btn');
@@ -281,7 +280,6 @@
             renderTable();
         }
 
-        // 渲染表格
         function renderTable() {
             const monthKey = document.getElementById('month-select').value;
             const [year, month] = monthKey.split('-').map(Number);
@@ -318,14 +316,12 @@
                     const isRest = (shift === '休');
 
                     if (!isEditMode) {
-                        // 检视模式：仅显示文字标签
                         let badgeClass = 'text-slate-400';
                         if (isRest) badgeClass = 'bg-rose-100 text-rose-700 font-bold px-1.5 py-0.5 rounded text-xs';
                         else if (shift) badgeClass = 'bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-xs font-medium';
 
                         html += `<td class="p-2 text-center"><span class="${badgeClass}">${shift || '-'}</span></td>`;
                     } else {
-                        // 手动修改模式：出现下拉选单
                         const selectBg = isRest ? 'bg-rose-50 text-rose-700 font-bold border-rose-300' : 'bg-transparent border-slate-200';
                         html += `<td class="p-1 text-center">
                             <select onchange="handleShiftChange('${emp}', '${dateStr}', this.value)" class="w-full text-center border rounded p-1 text-xs focus:ring-2 focus:ring-indigo-500 ${selectBg}">
@@ -368,19 +364,15 @@
             renderTable();
         }
 
-        // 校验1：排班重复岗位（检查每天各岗位是否被指派了多人，或特定业务逻辑冲突）
         function validateDuplicateShifts() {
             const monthKey = document.getElementById('month-select').value;
             const [year, month] = monthKey.split('-').map(Number);
             const daysInMonth = new Date(year, month, 0).getDate();
-
             let issues = [];
 
             for (let d = 1; d <= daysInMonth; d++) {
                 const dayStr = String(d).padStart(2, '0');
                 const dateStr = `${monthKey}-${dayStr}`;
-                
-                // 收集当天每个岗位有谁值班
                 let shiftCount = {};
                 employees.forEach(emp => {
                     const shift = currentSchedules[`${emp}_${dateStr}`];
@@ -390,11 +382,9 @@
                     }
                 });
 
-                // 范例校验规则：如果某些特定岗位一天内被同一人重复或有异常，可在此记录
-                // 这里扩充为：列出每一天各岗位分配状况，并检查是否有明显冲突或重复指派
                 Object.keys(shiftCount).forEach(s => {
                     if (shiftCount[s].length > 2) {
-                        issues.push(`📅 ${month}月${d}日：岗位 **[${s}]** 指派人数较多（共 ${shiftCount[s].length} 人：${shiftCount[s].join(', ')}）`);
+                        issues.push(`📅 ${month}月${d}日：岗位 **[${s}]** 人数较多（共 ${shiftCount[s].length} 人：${shiftCount[s].join(', ')}）`);
                     }
                 });
             }
@@ -402,7 +392,6 @@
             showModal('🔍 排班重复岗位校验结果', issues.length > 0 ? issues : ['✨ 太棒了！未侦测到异常的岗位重复指派情况。']);
         }
 
-        // 校验2：连排岗位（检查员工是否连续多天值班无休息，或连续岗位过长）
         function validateConsecutiveShifts() {
             let issues = [];
             const monthKey = document.getElementById('month-select').value;
@@ -411,8 +400,6 @@
 
             employees.forEach(emp => {
                 let consecutiveDays = 0;
-                let lastShift = '';
-
                 for (let d = 1; d <= daysInMonth; d++) {
                     const dayStr = String(d).padStart(2, '0');
                     const dateStr = `${monthKey}-${dayStr}`;
@@ -429,7 +416,7 @@
                 }
             });
 
-            showModal('⚠️ 连排岗位/过劳校验结果', issues.length > 0 ? issues : ['✨ 太棒了！所有员工的连续排班天数均在合理范围内（无连续上班>=5天）。']);
+            showModal('⚠️ 连排岗位/过劳校验结果', issues.length > 0 ? issues : ['✨ 太棒了！所有员工的连续排班天数均在合理范围内。']);
         }
 
         function showModal(title, contentArray) {
@@ -447,11 +434,11 @@
             document.getElementById('modal-container').classList.add('hidden');
         }
 
-        // 智慧解析云端假表
+        // 智慧解析云端假表（升级版：支援模糊比对与除错诊断）
         async function importCloudLeaves() {
             const rawUrl = document.getElementById('cloud-sheet-url').value.trim();
             if (!rawUrl) { alert('请先贴上云端假表连结！'); return; }
-            if (employees.length === 0) { alert('请先上方添加员工名单！'); return; }
+            if (employees.length === 0) { alert('请先在上方「员工管理」添加员工名单！'); return; }
 
             let csvUrl = rawUrl;
             if (rawUrl.includes('/edit')) {
@@ -465,18 +452,38 @@
                 if (!response.ok) throw new Error('无法读取该连结，请确认该 Google 试算表权限是否已设为「知道连结的人都能检视」！');
                 const csvText = await response.text();
                 
-                const rows = csvText.split('\n').map(line => line.split(',').map(c => c.trim().replace(/^["']|["']$/g, '')));
+                // 解析 CSV
+                const rows = csvText.split('\n').map(line => {
+                    let result = [];
+                    let inQuotes = false;
+                    let current = '';
+                    for (let i = 0; i < line.length; i++) {
+                        let c = line[i];
+                        if (c === '"') {
+                            inQuotes = !inQuotes;
+                        } else if (c === ',' && !inQuotes) {
+                            result.push(current.trim().replace(/^["']|["']$/g, ''));
+                            current = '';
+                        } else {
+                            current += c;
+                        }
+                    }
+                    result.push(current.trim().replace(/^["']|["']$/g, ''));
+                    return result;
+                });
+
                 const monthKey = document.getElementById('month-select').value;
                 const [year, month] = monthKey.split('-').map(Number);
                 const daysInMonth = new Date(year, month, 0).getDate();
 
-                let batchData = [];
                 let dayColMap = {}; 
                 let empRowMap = {}; 
+                let debugFoundRows = [];
 
+                // 1. 寻找日期座标（栏位中包含 1~31 的数字）
                 rows.forEach((row, rIdx) => {
                     row.forEach((cell, cIdx) => {
-                        const clean = cell.replace(/日|號/g, '').trim();
+                        const clean = cell.replace(/日|號|号/g, '').trim();
                         const num = parseInt(clean, 10);
                         if (!isNaN(num) && num >= 1 && num <= 31) {
                             dayColMap[cIdx] = num;
@@ -484,17 +491,20 @@
                     });
                 });
 
+                // 2. 寻找员工列座标（支援包含匹配）
                 rows.forEach((row, rIdx) => {
                     row.forEach((cell, cIdx) => {
-                        const clean = cell.trim();
+                        const cellVal = cell.toLowerCase();
                         employees.forEach(emp => {
-                            if (clean === emp || clean.includes(emp)) {
+                            if (cellVal.includes(emp.toLowerCase()) && emp.length > 0) {
                                 empRowMap[rIdx] = emp;
+                                debugFoundRows.push(`行 ${rIdx} 对应员工: ${emp} (内容: ${cell})`);
                             }
                         });
                     });
                 });
 
+                let batchData = [];
                 Object.keys(empRowMap).forEach(rIdx => {
                     const empName = empRowMap[rIdx];
                     const rowData = rows[rIdx];
@@ -503,7 +513,7 @@
                             const dayNum = dayColMap[cIdx];
                             if (dayNum >= 1 && dayNum <= daysInMonth) {
                                 const val = rowData[cIdx] !== undefined ? rowData[cIdx].trim() : '';
-                                if (val === '1' || val === '１') {
+                                if (val === '1' || val === '１' || val.toLowerCase() === 'true' || val === '休') {
                                     const dayStr = String(dayNum).padStart(2, '0');
                                     const dateStr = `${monthKey}-${dayStr}`;
                                     batchData.push({
@@ -519,7 +529,16 @@
                 });
 
                 if (batchData.length === 0) {
-                    alert('未侦测到匹配的休假座标！请确认 Google 试算表内的日期与员工姓名正确，且休假值为 1。');
+                    let debugInfo = [
+                        `❌ <strong>未侦测到匹配的休假座标！</strong>`,
+                        `📋 <strong>系统目前已登记的员工：</strong> ${employees.join(', ')}`,
+                        `🔍 <strong>试算表侦测到的员工列：</strong> ${debugFoundRows.length > 0 ? debugFoundRows.join('<br>') : '无（找不到与网页相同的员工姓名）'}`,
+                        `💡 <strong>排查建议：</strong>`,
+                        `1. 确认上方网页是否有输入这些员工姓名。`,
+                        `2. 确认 Google 试算表的员工姓名和网页完全一致（或包含其中）。`,
+                        `3. 确认假表内的休假格子确实填了数字 <strong>1</strong>。`
+                    ];
+                    showModal('⚠️️ 假表汇入除错诊断', debugInfo);
                     updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
                     return;
                 }
@@ -530,7 +549,7 @@
                 await loadSchedulesFromCloud();
                 renderTable();
                 updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-                alert(`成功抓取云端假表！已汇入 ${batchData.length} 笔休假。`);
+                alert(`🎉 成功抓取云端假表！已成功汇入 ${batchData.length} 笔休假。`);
 
             } catch (err) {
                 alert('抓取失败: ' + err.message);
