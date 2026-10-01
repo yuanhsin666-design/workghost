@@ -612,8 +612,14 @@ async function importCloudLeaves() {
         alert(`🎉 成功抓取雲端假表！已成功從中間區塊匯入 ${batchData.length} 筆休假。`);
 
     } catch (err) {
-        alert('抓取失敗: ' + err.message);
-        updateSyncStatus('已同步雲端', 'bg-emerald-500 text-white');
+        // 🟢 改用這個，把詳細錯誤彈窗出來
+        alert('抓取失敗詳情: ' + err.toString());
+        showModal('❌ 抓取崩潰錯誤', [
+            `錯誤訊息：${err.message}`,
+            `錯誤堆疊：${err.stack || '無'}`,
+            `可能原因：1. 您的 Google 試算表連結不是公開的。2. 瀏覽器擋下了跨域請求（CORS）。`
+        ]);
+        updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
     }
 }
 
