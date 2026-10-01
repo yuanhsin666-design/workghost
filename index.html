@@ -434,22 +434,30 @@
             document.getElementById('modal-container').classList.add('hidden');
         }
 
-        // 智慧解析云端假表（升级版：支援模糊比对与除错诊断）
+        // 智慧解析云端假表（已修正：完整保留 gid 分頁代號）
         async function importCloudLeaves() {
             const rawUrl = document.getElementById('cloud-sheet-url').value.trim();
             if (!rawUrl) { alert('请先贴上云端假表连结！'); return; }
             if (employees.length === 0) { alert('请先在上方「员工管理」添加员工名单！'); return; }
 
+            // 🟢 修正：完美保留網址裡的 gid 分頁代號
             let csvUrl = rawUrl;
             if (rawUrl.includes('/edit')) {
-                csvUrl = rawUrl.split('/edit')[0] + '/export?format=csv';
+                let gidMatch = rawUrl.match(/gid=([0-9]+)/);
+                let gid = gidMatch ? gidMatch[1] : null;
+                
+                let baseUrl = rawUrl.split('/edit')[0];
+                csvUrl = baseUrl + '/export?format=csv';
+                if (gid) {
+                    csvUrl += '&gid=' + gid;
+                }
             }
 
             updateSyncStatus('读取云端假表中...', 'bg-amber-500 text-white');
 
             try {
                 const response = await fetch(csvUrl);
-                if (!response.ok) throw new Error('无法读取该连结，请确认该 Google 试算表权限是否已设为「知道连结的人都能检视」！');
+                if (!response.ok) throw new Error('无法读取该连结，请确认 Google 试算表权限是否已设为「知道连结的人都能检视」！');
                 const csvText = await response.text();
                 
                 // 解析 CSV
@@ -476,152 +484,44 @@
                 const [year, month] = monthKey.split('-').map(Number);
                 const daysInMonth = new Date(year, month, 0).getDate();
 
+                // 把整张表印在主控台让你檢查
+                console.log("【Google 試算表原始資料】", rows);
+
                 let dayColMap = {}; 
                 let empRowMap = {}; 
                 let debugFoundRows = [];
 
-              
-// 智慧解析云端假表（全域自動搜尋名字版）
-async function importCloudLeaves() {
-    const rawUrl = document.getElementById('cloud-sheet-url').value.trim();
-    if (!rawUrl) { alert('请先贴上云端假表连结！'); return; }
-    if (employees.length === 0) { alert('请先在上方「员工管理」添加员工名单！'); return; }
+                // 1. 自動尋找日期座標（掃描全表，找出內容是 1~31 的欄位）
+                rows.forEach((row, rIdx) => {
+                    row.forEach((cell, cIdx) => {
+                        if (!cell) return;
+                        const clean = cell.toString().replace(/日|號|号/g, '').trim();
+                        const num = parseInt(clean, 10);
+                        if (!isNaN(num) && num >= 1 && num <= 31) {
+                            dayColMap[cIdx] = num;
+                        }
+                    });
+                });
 
-    let csvUrl = rawUrl;
-    if (rawUrl.includes('/edit')) {
-        csvUrl = rawUrl.split('/edit')[0] + '/export?format=csv';
-    }
-
-    updateSyncStatus('读取云端假表中...', 'bg-amber-500 text-white');
-
-    try {
-        const response = await fetch(csvUrl);
-        if (!response.ok) throw new Error('无法读取该连结，请确认 Google 试算表权限是否已设为「知道连结的人都能检视」！');
-        const csvText = await response.text();
-        
-        // 解析 CSV
-        const rows = csvText.split('\n').map(line => {
-            let result = [];
-            let inQuotes = false;
-            let current = '';
-            for (let i = 0; i < line.length; i++) {
-                let c = line[i];
-                if (c === '"') {
-                    inQuotes = !inQuotes;
-                } else if (c === ',' && !inQuotes) {
-                    result.push(current.trim().replace(/^["']|["']$/g, ''));
-                    current = '';
-                } else {
-                    current += c;
-                }
-            }
-            result.push(current.trim().replace(/^["']|["']$/g, ''));
-            return result;
-        });
-
-        const monthKey = document.getElementById('month-select').value;
-        const [year, month] = monthKey.split('-').map(Number);
-        const daysInMonth = new Date(year, month, 0).getDate();
-
-        // 🟢 加上這行，把整張表印在主控台讓你檢查
-        console.log("【Google 試算表原始資料】", rows);
-
-        let dayColMap = {}; 
-        let empRowMap = {}; 
-        let debugFoundRows = [];
-
-        // 1. 自動尋找日期座標（掃描全表，找出內容是 1~31 的欄位）
-        rows.forEach((row, rIdx) => {
-            row.forEach((cell, cIdx) => {
-                if (!cell) return;
-                const clean = cell.toString().replace(/日|號|号/g, '').trim();
-                const num = parseInt(clean, 10);
-                if (!isNaN(num) && num >= 1 && num <= 31) {
-                    dayColMap[cIdx] = num;
-                }
-            });
-        });
-
-        // 2. 【全面自動尋找名字】：掃描整張表的每一個格子，只要裡面包含了你系統中的員工名字就抓下來！
-        rows.forEach((row, rIdx) => {
-            row.forEach((cell, cIdx) => {
-                if (!cell) return;
-                const cellVal = cell.toString().toLowerCase().trim();
-                
-                employees.forEach(emp => {
-                    if (emp && emp.length > 0) {
-                        const targetEmp = emp.toLowerCase().trim();
-                        // 支援「完全相符」或「部分包含」（例如格子裡寫的是全名或帶有稱號）
-                        if (cellVal === targetEmp || cellVal.includes(targetEmp)) {
-                            // 如果這行還沒被對應過，就把它綁定給這個員工
-                            if (!empRowMap[rIdx]) {
-                                empRowMap[rIdx] = emp;
-                                debugFoundRows.push(`第 ${rIdx} 行對應員工: [${emp}] (格內文字: ${cell})`);
+                // 2. 自動尋找名字：掃描整張表的每一個格子
+                rows.forEach((row, rIdx) => {
+                    row.forEach((cell, cIdx) => {
+                        if (!cell) return;
+                        const cellVal = cell.toString().toLowerCase().trim();
+                        
+                        employees.forEach(emp => {
+                            if (emp && emp.length > 0) {
+                                const targetEmp = emp.toLowerCase().trim();
+                                if (cellVal === targetEmp || cellVal.includes(targetEmp)) {
+                                    if (!empRowMap[rIdx]) {
+                                        empRowMap[rIdx] = emp;
+                                        debugFoundRows.push(`第 ${rIdx} 行對應員工: [${emp}] (格內文字: ${cell})`);
+                                    }
+                                }
                             }
-                        }
-                    }
+                        });
+                    });
                 });
-            });
-        });
-
-        let batchData = [];
-        Object.keys(empRowMap).forEach(rIdx => {
-            const empName = empRowMap[rIdx];
-            const rowData = rows[rIdx];
-            if (rowData) {
-                Object.keys(dayColMap).forEach(cIdx => {
-                    const dayNum = dayColMap[cIdx];
-                    if (dayNum >= 1 && dayNum <= daysInMonth) {
-                        const val = rowData[cIdx] !== undefined ? rowData[cIdx].trim() : '';
-                        // 只要填了 1、１、true 或 休，就視為休假
-                        if (val === '1' || val === '１' || val.toLowerCase() === 'true' || val === '休') {
-                            const dayStr = String(dayNum).padStart(2, '0');
-                            const dateStr = `${monthKey}-${dayStr}`;
-                            batchData.push({
-                                month_key: monthKey,
-                                employee: empName,
-                                date_str: dateStr,
-                                shift: '休'
-                            });
-                        }
-                    }
-                });
-            }
-        });
-
-        if (batchData.length === 0) {
-            let debugInfo = [
-                `❌ <strong>未偵測到匹配的休假座標！</strong>`,
-                `📋 <strong>系統目前已登記的員工：</strong> ${employees.join(', ')}`,
-                `🔍 <strong>試算表全表掃描結果：</strong> ${debugFoundRows.length > 0 ? debugFoundRows.join('<br>') : '完全找不到任何相符的名字'}`,
-                `💡 <strong>排查建議：</strong>`,
-                `1. 請確認上方「員工管理」輸入的名字，是否跟 Google 試算表中間區塊的字一模一樣。`,
-                `2. 確認假表內的休假格子確實填了數字 <strong>1</strong>。`
-            ];
-            showModal('⚠️ 假表匯入除錯診斷', debugInfo);
-            updateSyncStatus('已同步雲端', 'bg-emerald-500 text-white');
-            return;
-        }
-
-        const { error } = await _supabase.from('schedules').upsert(batchData, { onConflict: 'employee,date_str' });
-        if (error) { alert('寫入假表失敗: ' + error.message); return; }
-
-        await loadSchedulesFromCloud();
-        renderTable();
-        updateSyncStatus('已同步雲端', 'bg-emerald-500 text-white');
-        alert(`🎉 成功抓取雲端假表！已成功從中間區塊匯入 ${batchData.length} 筆休假。`);
-
-    } catch (err) {
-        // 🟢 改用這個，把詳細錯誤彈窗出來
-        alert('抓取失敗詳情: ' + err.toString());
-        showModal('❌ 抓取崩潰錯誤', [
-            `錯誤訊息：${err.message}`,
-            `錯誤堆疊：${err.stack || '無'}`,
-            `可能原因：1. 您的 Google 試算表連結不是公開的。2. 瀏覽器擋下了跨域請求（CORS）。`
-        ]);
-        updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-    }
-}
 
                 let batchData = [];
                 Object.keys(empRowMap).forEach(rIdx => {
@@ -657,7 +557,7 @@ async function importCloudLeaves() {
                         `2. 确认 Google 试算表的员工姓名和网页完全一致（或包含其中）。`,
                         `3. 确认假表内的休假格子确实填了数字 <strong>1</strong>。`
                     ];
-                    showModal('⚠️️ 假表汇入除错诊断', debugInfo);
+                    showModal('⚠️ 假表汇入除错诊断', debugInfo);
                     updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
                     return;
                 }
@@ -671,7 +571,12 @@ async function importCloudLeaves() {
                 alert(`🎉 成功抓取云端假表！已成功汇入 ${batchData.length} 笔休假。`);
 
             } catch (err) {
-                alert('抓取失败: ' + err.message);
+                alert('抓取失败详情: ' + err.toString());
+                showModal('❌ 抓取崩溃错误', [
+                    `错误讯息：${err.message}`,
+                    `错误堆叠：${err.stack || '无'}`,
+                    `可能原因：1. 您的 Google 试算表连结不是公开的。2. 浏览器挡下了跨域请求（CORS）。`
+                ]);
                 updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
             }
         }
