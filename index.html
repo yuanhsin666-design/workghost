@@ -727,16 +727,7 @@
             const summary = `共侦测 ${moreThan2.length + sameDayDup.length + consecutiveSame.length + comboMismatch.length} 笔异常`;
             showModal('🔍 排班校验结果（' + summary + '）', finalIssues);
         }
-                });
-                Object.keys(shiftCount).forEach(s => {
-                    if (shiftCount[s].length > 2) {
-                        issues.push(`📅 ${month}月${d}日：岗位 **[${s}]** 人数较多（共 ${shiftCount[s].length} 人：${shiftCount[s].join(', ')}）`);
-                    }
-                });
-            }
-            showModal('🔍 排班重复岗位校验结果', issues.length > 0 ? issues : ['✨ 未侦测到异常的岗位重复指派。']);
-        }
-
+                
         function validateConsecutiveShifts() {
             let issues = [];
             const monthKey = document.getElementById('month-select').value;
