@@ -446,7 +446,7 @@
             alert(`已锁定历史日期：${dedupData.length} 格。`);
         }
 
-        // 岗位统计表
+                // 岗位统计表
         function renderStats() {
             const monthKey = document.getElementById('month-select').value;
             const [year, month] = monthKey.split('-').map(Number);
@@ -460,25 +460,14 @@
                 return;
             }
 
-            // 1. 收集所有岗位（从 combos 里抓，去重）
-            const allShifts = [];
-            combos.forEach(c => {
-                c.shifts.forEach(s => {
-                    if (!allShifts.includes(s)) allShifts.push(s);
-                });
-            });
-            allShifts.sort();
+            // 固定统计这 5 个岗位
+            const statShifts = ['AI', 'BUG', '彩票', '外接', '团队'];
 
-            if (allShifts.length === 0) {
-                table.innerHTML = '<tr><td class="text-center py-8 text-slate-400 text-sm">尚未设定任何岗位组合</td></tr>';
-                return;
-            }
-
-            // 2. 统计每位员工
-            const stats = {};  // emp -> { shift: count, total: n }
+            // 统计每位员工
+            const stats = {};
             employees.forEach(emp => {
                 stats[emp] = { total: 0 };
-                allShifts.forEach(s => { stats[emp][s] = 0; });
+                statShifts.forEach(s => { stats[emp][s] = 0; });
             });
 
             employees.forEach(emp => {
@@ -487,21 +476,27 @@
                     const key = `${emp}_${dateStr}`;
                     const rawShift = currentSchedules[key] || '';
                     if (!rawShift || isFixedRest(rawShift)) continue;  // 跳过休、空
-                    if (allShifts.includes(rawShift)) {
+
+                    if (rawShift === 'AI+BUG') {
+                        // ⭐ AI+BUG 拆成 AI +1、BUG +1
+                        stats[emp]['AI']++;
+                        stats[emp]['BUG']++;
+                        stats[emp].total += 2;   // 总计 +2（因为算了 2 次）
+                    } else if (statShifts.includes(rawShift)) {
                         stats[emp][rawShift]++;
-                        stats[emp].total++;
+                        stats[emp].total += 1;
                     } else {
-                        // 岗位不在组合里（例如手动改的），也计到「总计」，但不单列
-                        stats[emp].total++;
+                        // 不在 5 栏里的岗位（例如「支援」）→ 只加到总计
+                        stats[emp].total += 1;
                     }
                 }
             });
 
-            // 3. 画表格
+            // 画表格
             let html = '';
             html += '<thead><tr class="bg-slate-100 border-b border-slate-200 text-xs text-slate-600 uppercase tracking-wider">';
             html += '<th class="p-3 sticky left-0 bg-slate-100 z-10 w-32 text-center">员工</th>';
-            allShifts.forEach(s => {
+            statShifts.forEach(s => {
                 html += `<th class="p-3 text-center min-w-[70px]">${s}</th>`;
             });
             html += '<th class="p-3 text-center min-w-[70px] bg-indigo-100 text-indigo-800">总计</th>';
@@ -511,7 +506,7 @@
             employees.forEach(emp => {
                 html += '<tr class="hover:bg-slate-50/50">';
                 html += `<td class="p-3 font-semibold text-slate-800 sticky left-0 bg-white z-10 shadow-sm whitespace-nowrap">${emp}</td>`;
-                allShifts.forEach(s => {
+                statShifts.forEach(s => {
                     const n = stats[emp][s];
                     const cls = n > 0 ? 'text-slate-800 font-medium' : 'text-slate-300';
                     html += `<td class="p-3 text-center ${cls}">${n || 0}</td>`;
@@ -521,7 +516,7 @@
             });
             html += '</tbody>';
 
-                table.innerHTML = html;
+            table.innerHTML = html;
         }
 
         async function init() {
