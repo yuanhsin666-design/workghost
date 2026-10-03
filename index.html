@@ -102,6 +102,9 @@
                 <button onclick="validateConsecutiveShifts()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition shadow-sm">
                     ⚠️ 校验连排岗位
                 </button>
+                <button onclick="copyTable()" class="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition shadow-sm">
+                    📋 复制整表
+                </button>
                 <button onclick="clearMonthData()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-medium transition ml-auto">
                     重置当月资料
                 </button>
@@ -237,11 +240,10 @@
             container.innerHTML = html;
         }
 
-        function getAllShiftNames() {
+       function getAllShiftNames() {
             const set = new Set();
             combos.forEach(c => c.shifts.forEach(s => set.add(s)));
             set.add('休');
-            set.add('支援');
             return Array.from(set);
         }
 
@@ -823,13 +825,11 @@
                 if (!combo) continue;
 
                 const offset = (d - 1) % combo.shifts.length;
-                workingEmps.forEach((emp, idx) => {
-                    let shift;
-                    if (idx < combo.shifts.length) {
-                        shift = combo.shifts[(idx + offset) % combo.shifts.length];
-                    } else {
-                        shift = '支援';
-                    }
+                    workingEmps.forEach((emp, idx) => {
+                    // 超过组合岗位数的人 → 留空（不排班）
+                    if (idx >= combo.shifts.length) return;
+
+                    const shift = combo.shifts[(idx + offset) % combo.shifts.length];
                     batchData.push({
                         month_key: monthKey,
                         employee: emp,
@@ -891,7 +891,72 @@
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
             alert('当月资料已清空！');
         }
+        // 📋 复制整表（Tab 分隔，贴到 Excel 自动分格）
+        function copyTable() {
+            if (employees.length === 0) { alert('没有员工可复制！'); return; }
 
+            const monthKey = document.getElementById('month-select').value;
+            const [year, month] = monthKey.split('-').map(Number);
+            const daysInMonth = new Date(year, month, 0).getDate();
+
+            // 表头
+            const header = ['员工姓名'];
+            for (let d = 1; d <= daysInMonth; d++) header.push(`${d}日`);
+            const lines = [header.join('\t')];
+
+            // 每一行
+            employees.forEach(emp => {
+                const row = [emp];
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
+                    const key = `${emp}_${dateStr}`;
+                    const rawShift = currentSchedules[key] || '';
+                    const displayShift = isFixedRest(rawShift) ? '休' : rawShift;
+                    row.push(displayShift || '');
+                }
+                lines.push(row.join('\t'));
+            });
+
+            const text = lines.join('\n');
+
+            // 复制到剪贴板
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showModal('📋 已复制整表', [
+                        `已复制 ${employees.length} 位员工 × ${daysInMonth} 天的排班。`,
+                        `请到 Excel / Google Sheets 打开新档，按 <strong>Ctrl+V</strong> 贴上，会自动分格。`,
+                        `<details class="mt-2"><summary class="cursor-pointer text-xs text-slate-500">点此预览前 5 行</summary><pre class="mt-2 text-[10px] bg-white p-2 rounded border overflow-x-auto whitespace-pre">${lines.slice(0, 5).join('\n').replace(/</g, '&lt;')}</pre></details>`
+                    ]);
+                }).catch(err => {
+                    // 剪贴板失败 → 用 fallback
+                    fallbackCopy(text);
+                });
+            } else {
+                fallbackCopy(text);
+            }
+        }
+
+        function fallbackCopy(text) {
+            // 开一个 textarea 让使用者手动复制
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            try {
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showModal('📋 已复制整表', ['请到 Excel / Google Sheets 按 Ctrl+V 贴上。']);
+            } catch (e) {
+                document.body.removeChild(ta);
+                showModal('📋 请手动复制', [
+                    '自动复制失败，请手动选取下方文字并复制：',
+                    `<textarea class="w-full h-64 text-[10px] font-mono border rounded p-2 mt-2" onclick="this.select()">${text.replace(/</g, '&lt;')}</textarea>`
+                ]);
+            }
+        }
+        
         document.getElementById('month-select').addEventListener('change', async () => {
             await loadSchedulesFromCloud();
             await loadLockedCells();
