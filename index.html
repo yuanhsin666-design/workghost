@@ -1143,7 +1143,7 @@
                     return bMax - aMax;
                 });
 
-                                                   empSorted.forEach(emp => {
+                                    empSorted.forEach(emp => {
                     const recentShifts = getRecentShifts(emp, d, monthKey, simSchedules, 2);
 
                     // 1. 优先：不在最近 2 天 且 今天没人选过的岗位
@@ -1161,36 +1161,40 @@
                         candidates = shiftPool.filter(s => !recentShifts.includes(s));
                     }
 
-                    // 4. 最后：只能用全部（没办法避开）
+                    // 4. 最后：只能用全部
                     if (candidates.length === 0) {
                         candidates = [...shiftPool];
                     }
 
-                    // 5. ⭐ 关键：从候选里选「该员工累计次数最少」的岗位
-                    const empTotal = {};
-                    shiftPool.forEach(s => {
-                        empTotal[s] = getEmpShiftCount(emp, monthKey, daysInMonth, simSchedules, s);
-                    });
+                    // 5. ⭐ 用「累计次数最少」挑（真的去数 simSchedules）
+                    let pick = candidates[0];
+                    let pickCount = Infinity;
+                    let pickToday = Infinity;
+                    let pickConsec = Infinity;
 
-                    let minEmpCount = Infinity;
                     candidates.forEach(s => {
-                        if (empTotal[s] < minEmpCount) minEmpCount = empTotal[s];
-                    });
-                    const leastByEmp = candidates.filter(s => empTotal[s] === minEmpCount);
+                        // 5-1. 数该员工在 simSchedules 里拿过几次 s
+                        let count = 0;
+                        for (let dd = 1; dd <= daysInMonth; dd++) {
+                            const ds = `${monthKey}-${String(dd).padStart(2, '0')}`;
+                            if (simSchedules[`${emp}_${ds}`] === s) count++;
+                        }
+                        // 5-2. 今天已被选几次
+                        const todayCnt = todayPickCount[s] || 0;
+                        // 5-3. 连续几天做 s
+                        const consec = consecutiveCount[emp]?.[s] || 0;
 
-                    // 6. 破平手：选「今天被选次数最少」的
-                    let minToday = Infinity;
-                    leastByEmp.forEach(s => {
-                        if (todayPickCount[s] < minToday) minToday = todayPickCount[s];
-                    });
-                    const leastByToday = leastByEmp.filter(s => todayPickCount[s] === minToday);
-
-                    // 7. 再破平手：选「连续天数最少」的
-                    let minConsec = Infinity;
-                    let pick = leastByToday[0];
-                    leastByToday.forEach(s => {
-                        const cc = consecutiveCount[emp]?.[s] || 0;
-                        if (cc < minConsec) { minConsec = cc; pick = s; }
+                        // 比较优先级：累计次数 → 今天次数 → 连续次数
+                        if (
+                            count < pickCount ||
+                            (count === pickCount && todayCnt < pickToday) ||
+                            (count === pickCount && todayCnt === pickToday && consec < pickConsec)
+                        ) {
+                            pick = s;
+                            pickCount = count;
+                            pickToday = todayCnt;
+                            pickConsec = consec;
+                        }
                     });
 
                     // 更新模拟排班
