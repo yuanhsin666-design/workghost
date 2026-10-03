@@ -1129,14 +1129,13 @@
                 const todayPickCount = {};
                 shiftPool.forEach(s => { todayPickCount[s] = 0; });
 
-                // 排序：连续做同岗位最久的先挑（让他们优先避开）
-                const empSorted = [...workingEmps].sort((a, b) => {
-                    const aLast = getLastShift(a, d, monthKey, simSchedules);
-                    const bLast = getLastShift(b, d, monthKey, simSchedules);
-                    const aMax = aLast ? (consecutiveCount[a]?.[aLast] || 0) : 0;
-                    const bMax = bLast ? (consecutiveCount[b]?.[bLast] || 0) : 0;
-                    return bMax - aMax;
-                });
+                         // ⭐ 轮换优先顺序：每天把员工顺序往后推一位
+                //    day 1：原顺序；day 2：往后推 1；day 3：往后推 2 ...
+                const offsetEmp = (d - 1) % workingEmps.length;
+                const empSorted = [
+                    ...workingEmps.slice(offsetEmp),
+                    ...workingEmps.slice(0, offsetEmp)
+                ];
 
                 empSorted.forEach(emp => {
                     const recentShifts = getRecentShifts(emp, d, monthKey, simSchedules, 2);
