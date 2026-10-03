@@ -1138,57 +1138,36 @@
                     return bMax - aMax;
                 });
 
-                                    empSorted.forEach(emp => {
+                empSorted.forEach(emp => {
                     const recentShifts = getRecentShifts(emp, d, monthKey, simSchedules, 2);
 
-                    // 1. 优先：不在最近 2 天 且 今天没人选过的岗位
-                    let candidates = shiftPool.filter(s =>
-                        !recentShifts.includes(s) && todayPickCount[s] === 0
-                    );
-
-                    // 2. 次选：只避开「今天已被选过」
-                    if (candidates.length === 0) {
-                        candidates = shiftPool.filter(s => todayPickCount[s] === 0);
-                    }
-
-                    // 3. 再退：只避开「最近 2 天做过」
-                    if (candidates.length === 0) {
-                        candidates = shiftPool.filter(s => !recentShifts.includes(s));
-                    }
-
-                    // 4. 最后：只能用全部
-                    if (candidates.length === 0) {
-                        candidates = [...shiftPool];
-                    }
-
-                    // 5. ⭐ 用「累计次数最少」挑（真的去数 simSchedules）
-                    let pick = candidates[0];
-                    let pickCount = Infinity;
-                    let pickToday = Infinity;
-                    let pickConsec = Infinity;
-
-                    candidates.forEach(s => {
-                        // 5-1. 数该员工在 simSchedules 里拿过几次 s
-                        let count = 0;
-                        for (let dd = 1; dd <= daysInMonth; dd++) {
+                    // 计算每个岗位的「公平分」
+                    const scores = {};
+                    shiftPool.forEach(s => {
+                        // 1. 该员工本月至今天为止，拿过 s 几次
+                        let empCount = 0;
+                        for (let dd = 1; dd < d; dd++) {
                             const ds = `${monthKey}-${String(dd).padStart(2, '0')}`;
-                            if (simSchedules[`${emp}_${ds}`] === s) count++;
+                            if (simSchedules[`${emp}_${ds}`] === s) empCount++;
                         }
-                        // 5-2. 今天已被选几次
-                        const todayCnt = todayPickCount[s] || 0;
-                        // 5-3. 连续几天做 s
-                        const consec = consecutiveCount[emp]?.[s] || 0;
+                        // 2. 今天 s 已被几个人拿
+                        const todayCount = todayPickCount[s] || 0;
+                        // 3. 最近 2 天做过 → 加惩罚
+                        const recentPenalty = recentShifts.includes(s) ? 1000 : 0;
+                        // 4. 连续做过 → 加惩罚
+                        const consecPenalty = (consecutiveCount[emp]?.[s] || 0) * 50;
 
-                        // 比较优先级：累计次数 → 今天次数 → 连续次数
-                        if (
-                            count < pickCount ||
-                            (count === pickCount && todayCnt < pickToday) ||
-                            (count === pickCount && todayCnt === pickToday && consec < pickConsec)
-                        ) {
+                        // 公平分 = 累计次数*10 + 今天次数*100 + 惩罚
+                        scores[s] = empCount * 10 + todayCount * 100 + recentPenalty + consecPenalty;
+                    });
+
+                    // 挑分数最低的岗位
+                    let pick = shiftPool[0];
+                    let minScore = Infinity;
+                    shiftPool.forEach(s => {
+                        if (scores[s] < minScore) {
+                            minScore = scores[s];
                             pick = s;
-                            pickCount = count;
-                            pickToday = todayCnt;
-                            pickConsec = consec;
                         }
                     });
 
