@@ -1161,12 +1161,12 @@
             alert('当月休假已清空！');
         }
 
-        async function clearMonthData() {
+                async function clearMonthData() {
             if (!confirm('确定重置当月资料吗？\n（会清空没锁定的排班，锁定格与休假完全保留）')) return;
             const monthKey = document.getElementById('month-select').value;
             updateSyncStatus('清空中...', 'bg-rose-500 text-white');
 
-            // 1. 读锁定（加大 limit）
+            // 1. 读锁定
             const { data: lockedData, error: lockErr } = await _supabase
                 .from('locked_cells')
                 .select('employee, date_str')
@@ -1180,65 +1180,70 @@
                 lockedSet.add(`${row.employee}_${row.date_str}`);
             });
 
-            // 2. 读当月所有 schedules（加大 limit，避免截断）
-            const { data: schedData, error: schedErr } = await _supabase
-                .from('schedules')
-                .select('employee, date_str, shift')
-                .eq('month_key', monthKey)
-                .limit(5000);
-
-            if (schedErr) { alert('读取排班失败: ' + schedErr.message); return; }
-
-            console.log(`[重置] 读到 ${schedData.length} 笔 schedules，${lockedSet.size} 笔锁定`);
-
-            // 3. 筛出要删的
-            const toDelete = (schedData || []).filter(item => {
-                const key = `${item.employee}_${item.date_str}`;
-                if (lockedSet.has(key)) return false;
-                if (item.shift === '休' || item.shift === '休(固定)' || item.shift === '休(固定假)') return false;
-                return true;
-            });
-
-            console.log(`[重置] 要删 ${toDelete.length} 笔`);
-
-            if (toDelete.length === 0) {
-                alert('没有需要清理的排班（可能都已锁定或无排班）。');
-                updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-                return;
+            // 2. 读锁定格的「岗位」（重置后要补回来）
+            const lockedShifts = {};  // key -> shift
+            if (lockedSet.size > 0) {
+                const { data: lockedSchedData, error: lockSchedErr } = await _supabase
+                    .from('schedules')
+                    .select('employee, date_str, shift')
+                    .eq('month_key', monthKey)
+                    .limit(5000);
+                if (lockSchedErr) { alert('读取锁定格岗位失败: ' + lockSchedErr.message); return; }
+                (lockedSchedData || []).forEach(item => {
+                    const key = `${item.employee}_${item.date_str}`;
+                    if (lockedSet.has(key)) {
+                        lockedShifts[key] = item.shift;
+                    }
+                });
             }
 
-            // 4. 逐笔删除，并统计成功失败
-            let okCount = 0;
-            let failCount = 0;
-            const failList = [];
+            console.log(`[重置] 锁定 ${lockedSet.size} 格，其中 ${Object.keys(lockedShifts).length} 格有岗位`);
 
-            for (const item of toDelete) {
-                const { error } = await _supabase.from('schedules')
-                    .delete()
-                    .eq('month_key', monthKey)
-                    .eq('employee', item.employee)
-                    .eq('date_str', item.date_str);
-                if (error) {
-                    failCount++;
-                    failList.push(`${item.employee} ${item.date_str}: ${error.message}`);
-                    console.error('删除失败:', item, error);
+            // 3. 一次性删掉整个月的「非休」排班（最暴力、最快）
+            const { error: delErr } = await _supabase
+                .from('schedules')
+                .delete()
+                .eq('month_key', monthKey)
+                .neq('shift', '休');
+
+            if (delErr) { alert('删除失败: ' + delErr.message); return; }
+
+            console.log(`[重置] 已批量删除当月所有非休排班`);
+
+            // 4. 把锁定格的岗位补回来
+            const restoreData = [];
+            Object.keys(lockedShifts).forEach(key => {
+                const [employee, dateStr] = key.split('_');
+                // 只补「非休」的（休本来就没被删）
+                const shift = lockedShifts[key];
+                if (shift && shift !== '休' && shift !== '休(固定)' && shift !== '休(固定假)') {
+                    restoreData.push({
+                        month_key: monthKey,
+                        employee: employee,
+                        date_str: dateStr,
+                        shift: shift
+                    });
+                }
+            });
+
+            if (restoreData.length > 0) {
+                const { error: restoreErr } = await _supabase
+                    .from('schedules')
+                    .upsert(restoreData, { onConflict: 'employee,date_str' });
+                if (restoreErr) {
+                    alert('补回锁定格失败: ' + restoreErr.message + '\n请重新整理查看');
                 } else {
-                    okCount++;
+                    console.log(`[重置] 补回 ${restoreData.length} 笔锁定格岗位`);
                 }
             }
 
-            console.log(`[重置] 成功 ${okCount} 笔，失败 ${failCount} 笔`);
-
+            // 5. 重新载入
             await loadSchedulesFromCloud();
             await loadLockedCells();
             renderTable();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
 
-            let msg = `已重置！成功清 ${okCount} 笔。\n锁定格与休假完全保留。`;
-            if (failCount > 0) {
-                msg += `\n\n⚠️ ${failCount} 笔失败：\n` + failList.slice(0, 5).join('\n');
-            }
-            alert(msg);
+            alert(`已重置！\n锁定 ${lockedSet.size} 格已保留。\n休假已保留。`);
         }
         function copyTable() {
             if (employees.length === 0) { alert('没有员工可复制！'); return; }
