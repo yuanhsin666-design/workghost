@@ -1137,39 +1137,44 @@
                     ...workingEmps.slice(0, offsetEmp)
                 ];
 
-                empSorted.forEach(emp => {
+                              empSorted.forEach(emp => {
                     const recentShifts = getRecentShifts(emp, d, monthKey, simSchedules, 2);
 
-                    // 计算每个岗位的「公平分」
+                    // ⭐ 步骤 1：优先从「今天没人拿过的岗位」里挑
+                    let availablePool = shiftPool.filter(s => (todayPickCount[s] || 0) === 0);
+                    // 如果今天所有岗位都被人拿过 → 只能用全部（允许重复）
+                    if (availablePool.length === 0) {
+                        availablePool = [...shiftPool];
+                    }
+
+                    // 步骤 2：从 availablePool 里算公平分
                     const scores = {};
-                    shiftPool.forEach(s => {
-                        // 1. 该员工本月至今天为止，拿过 s 几次
+                    availablePool.forEach(s => {
+                        // 该员工本月至今天为止，拿过 s 几次
                         let empCount = 0;
                         for (let dd = 1; dd < d; dd++) {
                             const ds = `${monthKey}-${String(dd).padStart(2, '0')}`;
                             if (simSchedules[`${emp}_${ds}`] === s) empCount++;
                         }
-                        // 2. 今天 s 已被几个人拿
-                        const todayCount = todayPickCount[s] || 0;
-                        // 3. 最近 2 天做过 → 加惩罚
+                        // 最近 2 天做过 → 加惩罚
                         const recentPenalty = recentShifts.includes(s) ? 1000 : 0;
-                        // 4. 连续做过 → 加惩罚
+                        // 连续做过 → 加惩罚
                         const consecPenalty = (consecutiveCount[emp]?.[s] || 0) * 50;
 
-                        // 公平分 = 累计次数*10 + 今天次数*100 + 惩罚
-                        scores[s] = empCount * 10 + todayCount * 100 + recentPenalty + consecPenalty;
+                        // 公平分 = 累计次数*10 + 惩罚
+                        scores[s] = empCount * 10 + recentPenalty + consecPenalty;
                     });
 
-                    // 挑分数最低的岗位
-                    let pick = shiftPool[0];
+                    // 挑分数最低的
+                    let pick = availablePool[0];
                     let minScore = Infinity;
-                    shiftPool.forEach(s => {
+                    availablePool.forEach(s => {
                         if (scores[s] < minScore) {
                             minScore = scores[s];
                             pick = s;
                         }
                     });
-
+                    ... 后面照旧（更新 simSchedules、todayPickCount、连续计数、push batchData）
                     // 更新模拟排班
                     simSchedules[`${emp}_${dateStr}`] = pick;
                     todayPickCount[pick] = (todayPickCount[pick] || 0) + 1;
