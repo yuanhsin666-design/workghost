@@ -614,6 +614,39 @@
                 }
                 html += `</tr>`;
             });
+                        // ===== 统计：休假人数 =====
+            html += `<tr class="bg-rose-50 font-semibold text-rose-700 text-xs">`;
+            html += `<td class="p-2 sticky left-0 bg-rose-50 z-10 text-center whitespace-nowrap">🛌 休假人数</td>`;
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
+                let count = 0;
+                employees.forEach(emp => {
+                    const key = `${emp}_${dateStr}`;
+                    if (isFixedRest(currentSchedules[key])) count++;
+                });
+                html += `<td class="p-2 text-center">${count}</td>`;
+            }
+            html += `</tr>`;
+
+            // ===== 统计：上班人数 =====
+            html += `<tr class="bg-emerald-50 font-semibold text-emerald-700 text-xs">`;
+            html += `<td class="p-2 sticky left-0 bg-emerald-50 z-10 text-center whitespace-nowrap">👔 上班人数</td>`;
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
+                let count = 0;
+                employees.forEach(emp => {
+                    const key = `${emp}_${dateStr}`;
+                    const shift = currentSchedules[key] || '';
+                    // 上班 = 没休（有休的跳过）
+                    if (!isFixedRest(shift)) count++;
+                });
+                html += `<td class="p-2 text-center">${count}</td>`;
+            }
+            html += `</tr>`;
+
+            html += '</tbody>';
+            table.innerHTML = html;
+        }
             html += '</tbody>';
             table.innerHTML = html;
         }
