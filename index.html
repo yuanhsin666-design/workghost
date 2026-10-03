@@ -69,7 +69,7 @@
                     <button onclick="saveCombo()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-xl text-sm font-medium transition whitespace-nowrap">新增 / 更新组合</button>
                 </div>
                 <div id="combo-list-container" class="space-y-2 pt-2"></div>
-                <p class="text-xs text-slate-400">💡 排班时：当天上班人数 → 找最接近的组合 → 按日期轮流分配。人数超过组合时，多出的给「支援」。</p>
+                <p class="text-xs text-slate-400">💡 排班时：当天上班人数 → 找最接近的组合 → 按日期轮流分配。人数超过组合时，多出的人留空。</p>
             </div>
 
             <div class="space-y-3 border-t border-slate-100 pt-6">
@@ -86,7 +86,7 @@
                     </button>
                     <span id="lock-stat" class="text-xs text-slate-500 ml-2">本月已锁定 0 格</span>
                 </div>
-                <p class="text-xs text-slate-400">💡 开启手动修改模式后，每个非固定休假的格子旁会有小锁图示，点它可单格锁定/解锁。锁定后完全冻结，智能排班也会跳过。</p>
+                <p class="text-xs text-slate-400">💡 检视模式下：点格子 = 锁定/解锁；点日期表头 = 锁定/解锁整天。手动修改模式下：点锁定格 = 解锁；点普通格 = 改岗位。</p>
             </div>
 
             <div class="flex flex-wrap gap-3 pt-2 items-center">
@@ -114,7 +114,7 @@
         <div class="bg-white shadow rounded-2xl p-6 space-y-4">
             <div class="flex justify-between items-center border-b border-slate-100 pb-4">
                 <h2 id="table-title" class="font-bold text-slate-800 text-lg">📊 排班工作表预览</h2>
-                <span id="mode-tip" class="text-xs text-amber-600 font-medium">🔒 目前为检视模式（点选上方「开启手动修改」即可编辑）</span>
+                <span id="mode-tip" class="text-xs text-amber-600 font-medium">🔒 检视模式（点格子锁定/解锁；开手动修改编辑）</span>
             </div>
             <div class="overflow-x-auto min-h-[400px]">
                 <table id="schedule-table" class="w-full text-left border-collapse"></table>
@@ -240,7 +240,7 @@
             container.innerHTML = html;
         }
 
-       function getAllShiftNames() {
+        function getAllShiftNames() {
             const set = new Set();
             combos.forEach(c => c.shifts.forEach(s => set.add(s)));
             set.add('休');
@@ -304,6 +304,36 @@
             else await lockCell(emp, dateStr, 'manual');
         }
 
+        // 点日期表头：直接切换整天锁定/解锁（无弹窗）
+        async function toggleLockDay(dateStr) {
+            if (employees.length === 0) { alert('请先添加员工！'); return; }
+
+            const lockedCount = employees.filter(emp => isLocked(emp, dateStr)).length;
+            const total = employees.length;
+            const allLocked = (lockedCount === total);
+
+            updateSyncStatus(allLocked ? '解锁中...' : '锁定中...', 'bg-amber-500 text-white');
+
+            if (allLocked) {
+                const { error } = await _supabase.from('locked_cells').delete().eq('date_str', dateStr);
+                if (error) { alert('解锁失败: ' + error.message); return; }
+            } else {
+                const monthKey = document.getElementById('month-select').value;
+                const batch = employees.map(emp => ({
+                    month_key: monthKey,
+                    employee: emp,
+                    date_str: dateStr,
+                    reason: 'day_lock'
+                }));
+                const { error } = await _supabase.from('locked_cells').upsert(batch, { onConflict: 'employee,date_str' });
+                if (error) { alert('锁定失败: ' + error.message); return; }
+            }
+
+            await loadLockedCells();
+            renderTable();
+            updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+        }
+
         async function lockAllMonth() {
             if (employees.length === 0) { alert('请先添加员工！'); return; }
             if (!confirm(`确定锁定本月所有格子？（${employees.length} 人 × 整月）`)) return;
@@ -333,48 +363,7 @@
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
             alert(`已锁定 ${dedupData.length} 格！`);
         }
-        // 点日期表头：切换那天全部锁定/解锁
-        async function toggleLockDay(dateStr) {
-            if (employees.length === 0) { alert('请先添加员工！'); return; }
 
-            // 检查这天是否「全锁」
-            const lockedCount = employees.filter(emp => isLocked(emp, dateStr)).length;
-            const total = employees.length;
-            const allLocked = (lockedCount === total);
-
-            if (allLocked) {
-                // 全锁 → 解开那天全部
-                if (!confirm(`确定解锁 ${dateStr} 这天所有员工的锁定吗？`)) return;
-                updateSyncStatus('解锁中...', 'bg-amber-500 text-white');
-
-                const { error } = await _supabase.from('locked_cells')
-                    .delete().eq('date_str', dateStr);
-                if (error) { alert('解锁失败: ' + error.message); return; }
-
-                await loadLockedCells();
-                renderTable();
-                updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-            } else {
-                // 没全锁 → 锁全部
-                if (!confirm(`确定锁定 ${dateStr} 这天全部 ${total} 位员工吗？`)) return;
-                updateSyncStatus('锁定中...', 'bg-amber-500 text-white');
-
-                const monthKey = document.getElementById('month-select').value;
-                const batch = employees.map(emp => ({
-                    month_key: monthKey,
-                    employee: emp,
-                    date_str: dateStr,
-                    reason: 'day_lock'
-                }));
-
-                const { error } = await _supabase.from('locked_cells').upsert(batch, { onConflict: 'employee,date_str' });
-                if (error) { alert('锁定失败: ' + error.message); return; }
-
-                await loadLockedCells();
-                renderTable();
-                updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-            }
-        }
         async function unlockAllMonth() {
             if (!confirm('确定解锁本月所有格子？')) return;
             const monthKey = document.getElementById('month-select').value;
@@ -514,12 +503,12 @@
                 btn.className = "bg-rose-500 hover:bg-rose-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition shadow-sm";
                 btn.innerText = "🔒 关闭手动修改";
                 tip.className = "text-xs text-rose-600 font-medium";
-                tip.innerText = "✍️ 手动修改模式（🔒 休 与锁定格不可改，点小锁可切换锁定）";
+                tip.innerText = "✍️ 手动修改模式（点普通格改岗位；点锁定格解锁）";
             } else {
                 btn.className = "bg-amber-500 hover:bg-amber-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition shadow-sm";
                 btn.innerText = "✍️ 开启手动修改";
                 tip.className = "text-xs text-amber-600 font-medium";
-                tip.innerText = "🔒 检视模式（点选上方「开启手动修改」即可编辑）";
+                tip.innerText = "🔒 检视模式（点格子锁定/解锁；开手动修改编辑）";
             }
             renderTable();
         }
@@ -546,9 +535,9 @@
             let html = '';
             html += '<thead><tr class="bg-slate-100 border-b border-slate-200 text-xs text-slate-600 uppercase tracking-wider">';
             html += '<th class="p-3 sticky left-0 bg-slate-100 z-10 w-32 text-center">员工姓名</th>';
-                        for (let d = 1; d <= daysInMonth; d++) {
+
+            for (let d = 1; d <= daysInMonth; d++) {
                 const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
-                // 统计这天锁了几格
                 const lockedCount = employees.filter(emp => isLocked(emp, dateStr)).length;
                 const total = employees.length;
                 let lockMark = '';
@@ -578,26 +567,35 @@
                     const locked = isLocked(emp, dateStr);
 
                     if (!isEditMode) {
+                        // 检视模式：点整格 = 锁定/解锁切换
                         let badgeClass = 'text-slate-400';
                         if (isRest) badgeClass = 'bg-rose-100 text-rose-700 font-bold px-1.5 py-0.5 rounded text-xs';
                         else if (displayShift) badgeClass = 'bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-xs font-medium';
 
                         const lockIcon = locked ? '<span class="absolute top-0 right-0 text-[9px]">🔒</span>' : '';
-                        html += `<td class="p-2 text-center relative">
+                        const lockBg = locked ? 'bg-slate-100' : '';
+                        html += `<td class="p-2 text-center relative cursor-pointer hover:bg-indigo-50 select-none ${lockBg}"
+                            onclick="toggleLockCell('${emp}', '${dateStr}')"
+                            title="点击切换锁定/解锁">
                             ${lockIcon}
-                            <span class="${badgeClass}">${displayShift || '-'}</span>
+                            <span class="${badgeClass} pointer-events-none">${displayShift || '-'}</span>
                         </td>`;
                     } else {
+                        // 手动修改模式
                         if (isRest) {
+                            // 固定休假：不可改，也不能点击
                             html += `<td class="p-1 text-center">
                                 <span class="inline-block w-full bg-rose-100 text-rose-700 font-bold border border-rose-300 rounded p-1 text-xs cursor-not-allowed" title="固定休假">🔒 休</span>
                             </td>`;
                         } else if (locked) {
-                            html += `<td class="p-1 text-center relative">
-                                <span class="inline-block w-full bg-slate-200 text-slate-700 font-bold border border-slate-400 rounded p-1 text-xs cursor-not-allowed">🔒 ${displayShift || '-'}</span>
-                                <button onclick="toggleLockCell('${emp}', '${dateStr}')" class="absolute -top-1 -right-1 bg-white border border-slate-400 rounded-full w-4 h-4 flex items-center justify-center text-[9px] hover:bg-amber-100" title="点击解锁">🔓</button>
+                            // 锁定格：点整格 = 解锁
+                            html += `<td class="p-1 text-center relative cursor-pointer hover:bg-amber-50"
+                                onclick="toggleLockCell('${emp}', '${dateStr}')"
+                                title="点击解锁">
+                                <span class="inline-block w-full bg-slate-200 text-slate-700 font-bold border border-slate-400 rounded p-1 text-xs pointer-events-none">🔓 ${displayShift || '-'}</span>
                             </td>`;
                         } else {
+                            // 可编辑格：下拉选单改岗位；点小锁 = 锁定
                             html += `<td class="p-1 text-center relative">
                                 <select onchange="handleShiftChange('${emp}', '${dateStr}', this.value)" class="w-full text-center border rounded p-1 text-xs bg-transparent border-slate-200 focus:ring-2 focus:ring-indigo-500">
                                     <option value="" ${displayShift === '' ? 'selected' : ''}>-</option>`;
@@ -609,7 +607,7 @@
                                 html += `<option value="${displayShift}" selected>${displayShift}</option>`;
                             }
                             html += `</select>
-                                <button onclick="toggleLockCell('${emp}', '${dateStr}')" class="absolute -top-1 -right-1 bg-white border border-slate-300 rounded-full w-4 h-4 flex items-center justify-center text-[9px] opacity-40 hover:opacity-100 hover:bg-amber-100" title="点击锁定">🔒</button>
+                                <button onclick="event.stopPropagation(); toggleLockCell('${emp}', '${dateStr}')" class="absolute -top-1 -right-1 bg-white border border-slate-300 rounded-full w-4 h-4 flex items-center justify-center text-[9px] opacity-40 hover:opacity-100 hover:bg-amber-100" title="点击锁定">🔒</button>
                             </td>`;
                         }
                     }
@@ -620,7 +618,7 @@
             table.innerHTML = html;
         }
 
-               async function handleShiftChange(employee, dateStr, shift) {
+        async function handleShiftChange(employee, dateStr, shift) {
             const key = `${employee}_${dateStr}`;
             const existing = currentSchedules[key];
 
@@ -653,13 +651,12 @@
             renderTable();
         }
 
-               function validateDuplicateShifts() {
+        function validateDuplicateShifts() {
             const monthKey = document.getElementById('month-select').value;
             const [year, month] = monthKey.split('-').map(Number);
             const daysInMonth = new Date(year, month, 0).getDate();
             let issues = [];
 
-            // ===== 检查 1 & 2：同天同岗位人数 =====
             let moreThan2 = [];
             let sameDayDup = [];
 
@@ -679,18 +676,16 @@
                     if (list.length > 2) {
                         moreThan2.push(`📅 ${month}月${d}日：**[${s}]** 有 ${list.length} 人（${list.join(', ')}）`);
                     }
-                    if (list.length >= 2 && list.length <= 2) {
+                    if (list.length === 2) {
                         sameDayDup.push(`📅 ${month}月${d}日：**[${s}]** 有 2 人（${list.join(', ')}）`);
                     }
                 });
             }
 
-            // ===== 检查 3：同一员工，同岗位连续太多天 =====
             let consecutiveSame = [];
             employees.forEach(emp => {
                 let lastShift = null;
                 let runLength = 0;
-                let runStart = 0;
                 for (let d = 1; d <= daysInMonth; d++) {
                     const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
                     const rawShift = currentSchedules[`${emp}_${dateStr}`] || '';
@@ -698,26 +693,20 @@
 
                     if (shift && shift === lastShift) {
                         runLength++;
-                        if (runLength >= 3) {
-                            // 已经连续 3 天以上，只在「刚好达到 3 的倍数」时记录一次，避免重复
-                            if (runLength === 3) {
-                                consecutiveSame.push(`⚠️ **${emp}** 自 ${d - 2}日 起连续做 **[${shift}]**`);
-                            }
+                        if (runLength === 3) {
+                            consecutiveSame.push(`⚠️ **${emp}** 自 ${d - 2}日 起连续做 **[${shift}]**`);
                         }
                     } else {
                         lastShift = shift || null;
                         runLength = 1;
-                        runStart = d;
                     }
                 }
             });
 
-            // ===== 检查 4：人数 vs 岗位组合是否对得上 =====
             let comboMismatch = [];
             for (let d = 1; d <= daysInMonth; d++) {
                 const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
 
-                // 当天上班人数（没休 + 没锁 之外，实际有排岗位的才算）
                 const workingEmps = employees.filter(emp => {
                     const key = `${emp}_${dateStr}`;
                     return !isFixedRest(currentSchedules[key]);
@@ -725,7 +714,6 @@
 
                 if (workingEmps.length === 0) continue;
 
-                // 当天实际有岗位的人
                 const assignedEmps = workingEmps.filter(emp => {
                     const shift = currentSchedules[`${emp}_${dateStr}`] || '';
                     return shift && !isFixedRest(shift);
@@ -737,12 +725,10 @@
                     continue;
                 }
 
-                // 人数 vs 组合人数
                 if (workingEmps.length !== combo.headcount) {
-                    comboMismatch.push(`📅 ${month}月${d}日：上班 ${workingEmps.length} 人，套用「${combo.headcount} 人」组合（最接近）`);
+                    comboMismatch.push(`📅 ${month}月${d}日：上班 ${workingEmps.length} 人，套用「${combo.headcount} 人」组合`);
                 }
 
-                // 组合岗位数 vs 实际有岗位人数
                 if (assignedEmps.length < combo.shifts.length) {
                     const empty = workingEmps.length - assignedEmps.length;
                     if (empty > 0) {
@@ -751,9 +737,7 @@
                 }
             }
 
-            // ===== 组合结果 =====
             let finalIssues = [];
-
             if (moreThan2.length > 0) {
                 finalIssues.push(`<div class="font-bold text-rose-700 mb-1">🔴 检查 1：同一天同岗位 >2 人（${moreThan2.length} 笔）</div>`);
                 finalIssues.push(...moreThan2);
@@ -776,11 +760,10 @@
                 return;
             }
 
-            // 统计
             const summary = `共侦测 ${moreThan2.length + sameDayDup.length + consecutiveSame.length + comboMismatch.length} 笔异常`;
             showModal('🔍 排班校验结果（' + summary + '）', finalIssues);
         }
-                
+
         function validateConsecutiveShifts() {
             let issues = [];
             const monthKey = document.getElementById('month-select').value;
@@ -967,7 +950,6 @@
             for (let d = 1; d <= daysInMonth; d++) {
                 const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
 
-                // 当天上班 = 没休 且 没锁定
                 const workingEmps = employees.filter(emp => {
                     const key = `${emp}_${dateStr}`;
                     if (isFixedRest(currentSchedules[key])) return false;
@@ -981,10 +963,8 @@
                 if (!combo) continue;
 
                 const offset = (d - 1) % combo.shifts.length;
-                    workingEmps.forEach((emp, idx) => {
-                    // 超过组合岗位数的人 → 留空（不排班）
+                workingEmps.forEach((emp, idx) => {
                     if (idx >= combo.shifts.length) return;
-
                     const shift = combo.shifts[(idx + offset) % combo.shifts.length];
                     batchData.push({
                         month_key: monthKey,
@@ -1047,7 +1027,7 @@
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
             alert('当月资料已清空！');
         }
-        // 📋 复制整表（Tab 分隔，贴到 Excel 自动分格）
+
         function copyTable() {
             if (employees.length === 0) { alert('没有员工可复制！'); return; }
 
@@ -1055,12 +1035,10 @@
             const [year, month] = monthKey.split('-').map(Number);
             const daysInMonth = new Date(year, month, 0).getDate();
 
-            // 表头
             const header = ['员工姓名'];
             for (let d = 1; d <= daysInMonth; d++) header.push(`${d}日`);
             const lines = [header.join('\t')];
 
-            // 每一行
             employees.forEach(emp => {
                 const row = [emp];
                 for (let d = 1; d <= daysInMonth; d++) {
@@ -1075,7 +1053,6 @@
 
             const text = lines.join('\n');
 
-            // 复制到剪贴板
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text).then(() => {
                     showModal('📋 已复制整表', [
@@ -1084,7 +1061,6 @@
                         `<details class="mt-2"><summary class="cursor-pointer text-xs text-slate-500">点此预览前 5 行</summary><pre class="mt-2 text-[10px] bg-white p-2 rounded border overflow-x-auto whitespace-pre">${lines.slice(0, 5).join('\n').replace(/</g, '&lt;')}</pre></details>`
                     ]);
                 }).catch(err => {
-                    // 剪贴板失败 → 用 fallback
                     fallbackCopy(text);
                 });
             } else {
@@ -1093,7 +1069,6 @@
         }
 
         function fallbackCopy(text) {
-            // 开一个 textarea 让使用者手动复制
             const ta = document.createElement('textarea');
             ta.value = text;
             ta.style.position = 'fixed';
@@ -1112,7 +1087,7 @@
                 ]);
             }
         }
-        
+
         document.getElementById('month-select').addEventListener('change', async () => {
             await loadSchedulesFromCloud();
             await loadLockedCells();
