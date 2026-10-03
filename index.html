@@ -120,6 +120,17 @@
                 <table id="schedule-table" class="w-full text-left border-collapse"></table>
             </div>
         </div>
+
+        <!-- 岗位统计 -->
+        <div class="bg-white shadow rounded-2xl p-6 space-y-4">
+            <div class="flex justify-between items-center border-b border-slate-100 pb-4">
+                <h2 id="stats-title" class="font-bold text-slate-800 text-lg">📊 岗位统计</h2>
+                <span class="text-xs text-slate-500">统计当月每人各拿几次岗位（不含休假）</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table id="stats-table" class="w-full text-left border-collapse"></table>
+            </div>
+        </div>
     </div>
 
     <div id="modal-container" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center p-4">
@@ -427,22 +438,83 @@
             alert(`已锁定历史日期：${dedupData.length} 格。`);
         }
 
-        async function init() {
-            updateSyncStatus('连线中...', 'bg-amber-500 text-white');
-            await loadEmployees();
-            await loadCombos();
-            await loadSchedulesFromCloud();
-            await loadLockedCells();
+        // 岗位统计表
+        function renderStats() {
+            const monthKey = document.getElementById('month-select').value;
+            const [year, month] = monthKey.split('-').map(Number);
+            const daysInMonth = new Date(year, month, 0).getDate();
 
-            const savedUrl = await loadCloudUrl();
-            if (savedUrl) document.getElementById('cloud-sheet-url').value = savedUrl;
+            document.getElementById('stats-title').innerText = `📊 岗位统计 — ${year}年${month}月`;
 
-            renderEmployeeSelect();
-            renderComboList();
-            renderTable();
-            updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+            const table = document.getElementById('stats-table');
+            if (employees.length === 0) {
+                table.innerHTML = '<tr><td class="text-center py-8 text-slate-400 text-sm">尚无员工</td></tr>';
+                return;
+            }
+
+            // 1. 收集所有岗位（从 combos 里抓，去重）
+            const allShifts = [];
+            combos.forEach(c => {
+                c.shifts.forEach(s => {
+                    if (!allShifts.includes(s)) allShifts.push(s);
+                });
+            });
+            allShifts.sort();
+
+            if (allShifts.length === 0) {
+                table.innerHTML = '<tr><td class="text-center py-8 text-slate-400 text-sm">尚未设定任何岗位组合</td></tr>';
+                return;
+            }
+
+            // 2. 统计每位员工
+            const stats = {};  // emp -> { shift: count, total: n }
+            employees.forEach(emp => {
+                stats[emp] = { total: 0 };
+                allShifts.forEach(s => { stats[emp][s] = 0; });
+            });
+
+            employees.forEach(emp => {
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
+                    const key = `${emp}_${dateStr}`;
+                    const rawShift = currentSchedules[key] || '';
+                    if (!rawShift || isFixedRest(rawShift)) continue;  // 跳过休、空
+                    if (allShifts.includes(rawShift)) {
+                        stats[emp][rawShift]++;
+                        stats[emp].total++;
+                    } else {
+                        // 岗位不在组合里（例如手动改的），也计到「总计」，但不单列
+                        stats[emp].total++;
+                    }
+                }
+            });
+
+            // 3. 画表格
+            let html = '';
+            html += '<thead><tr class="bg-slate-100 border-b border-slate-200 text-xs text-slate-600 uppercase tracking-wider">';
+            html += '<th class="p-3 sticky left-0 bg-slate-100 z-10 w-32 text-center">员工</th>';
+            allShifts.forEach(s => {
+                html += `<th class="p-3 text-center min-w-[70px]">${s}</th>`;
+            });
+            html += '<th class="p-3 text-center min-w-[70px] bg-indigo-100 text-indigo-800">总计</th>';
+            html += '</tr></thead>';
+
+            html += '<tbody class="divide-y divide-slate-100 text-sm">';
+            employees.forEach(emp => {
+                html += '<tr class="hover:bg-slate-50/50">';
+                html += `<td class="p-3 font-semibold text-slate-800 sticky left-0 bg-white z-10 shadow-sm whitespace-nowrap">${emp}</td>`;
+                allShifts.forEach(s => {
+                    const n = stats[emp][s];
+                    const cls = n > 0 ? 'text-slate-800 font-medium' : 'text-slate-300';
+                    html += `<td class="p-3 text-center ${cls}">${n || 0}</td>`;
+                });
+                html += `<td class="p-3 text-center font-bold bg-indigo-50 text-indigo-700">${stats[emp].total}</td>`;
+                html += '</tr>';
+            });
+            html += '</tbody>';
+
+            table.innerHTML = html;
         }
-
         function updateSyncStatus(text, className) {
             const badge = document.getElementById('sync-status');
             badge.className = `text-xs px-3 py-1.5 rounded-full font-medium shadow-inner ${className}`;
@@ -1309,6 +1381,7 @@
             await loadSchedulesFromCloud();
             await loadLockedCells();
             renderTable();
+            renderStats();
         });
 
         init();
