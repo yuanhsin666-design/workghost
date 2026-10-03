@@ -600,21 +600,133 @@
             renderTable();
         }
 
-        function validateDuplicateShifts() {
+               function validateDuplicateShifts() {
             const monthKey = document.getElementById('month-select').value;
             const [year, month] = monthKey.split('-').map(Number);
             const daysInMonth = new Date(year, month, 0).getDate();
             let issues = [];
 
+            // ===== 检查 1 & 2：同天同岗位人数 =====
+            let moreThan2 = [];
+            let sameDayDup = [];
+
             for (let d = 1; d <= daysInMonth; d++) {
                 const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
-                let shiftCount = {};
+                const shiftCount = {};
                 employees.forEach(emp => {
                     const shift = currentSchedules[`${emp}_${dateStr}`];
                     if (shift && !isFixedRest(shift)) {
                         if (!shiftCount[shift]) shiftCount[shift] = [];
                         shiftCount[shift].push(emp);
                     }
+                });
+
+                Object.keys(shiftCount).forEach(s => {
+                    const list = shiftCount[s];
+                    if (list.length > 2) {
+                        moreThan2.push(`📅 ${month}月${d}日：**[${s}]** 有 ${list.length} 人（${list.join(', ')}）`);
+                    }
+                    if (list.length >= 2 && list.length <= 2) {
+                        sameDayDup.push(`📅 ${month}月${d}日：**[${s}]** 有 2 人（${list.join(', ')}）`);
+                    }
+                });
+            }
+
+            // ===== 检查 3：同一员工，同岗位连续太多天 =====
+            let consecutiveSame = [];
+            employees.forEach(emp => {
+                let lastShift = null;
+                let runLength = 0;
+                let runStart = 0;
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
+                    const rawShift = currentSchedules[`${emp}_${dateStr}`] || '';
+                    const shift = isFixedRest(rawShift) ? '' : rawShift;
+
+                    if (shift && shift === lastShift) {
+                        runLength++;
+                        if (runLength >= 3) {
+                            // 已经连续 3 天以上，只在「刚好达到 3 的倍数」时记录一次，避免重复
+                            if (runLength === 3) {
+                                consecutiveSame.push(`⚠️ **${emp}** 自 ${d - 2}日 起连续做 **[${shift}]**`);
+                            }
+                        }
+                    } else {
+                        lastShift = shift || null;
+                        runLength = 1;
+                        runStart = d;
+                    }
+                }
+            });
+
+            // ===== 检查 4：人数 vs 岗位组合是否对得上 =====
+            let comboMismatch = [];
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
+
+                // 当天上班人数（没休 + 没锁 之外，实际有排岗位的才算）
+                const workingEmps = employees.filter(emp => {
+                    const key = `${emp}_${dateStr}`;
+                    return !isFixedRest(currentSchedules[key]);
+                });
+
+                if (workingEmps.length === 0) continue;
+
+                // 当天实际有岗位的人
+                const assignedEmps = workingEmps.filter(emp => {
+                    const shift = currentSchedules[`${emp}_${dateStr}`] || '';
+                    return shift && !isFixedRest(shift);
+                });
+
+                const combo = findClosestCombo(workingEmps.length);
+                if (!combo) {
+                    comboMismatch.push(`📅 ${month}月${d}日：上班 ${workingEmps.length} 人，但**没有任何岗位组合**`);
+                    continue;
+                }
+
+                // 人数 vs 组合人数
+                if (workingEmps.length !== combo.headcount) {
+                    comboMismatch.push(`📅 ${month}月${d}日：上班 ${workingEmps.length} 人，套用「${combo.headcount} 人」组合（最接近）`);
+                }
+
+                // 组合岗位数 vs 实际有岗位人数
+                if (assignedEmps.length < combo.shifts.length) {
+                    const empty = workingEmps.length - assignedEmps.length;
+                    if (empty > 0) {
+                        comboMismatch.push(`📅 ${month}月${d}日：${workingEmps.length} 人上班，但只有 ${assignedEmps.length} 人有岗位（${empty} 人空着）`);
+                    }
+                }
+            }
+
+            // ===== 组合结果 =====
+            let finalIssues = [];
+
+            if (moreThan2.length > 0) {
+                finalIssues.push(`<div class="font-bold text-rose-700 mb-1">🔴 检查 1：同一天同岗位 >2 人（${moreThan2.length} 笔）</div>`);
+                finalIssues.push(...moreThan2);
+            }
+            if (sameDayDup.length > 0) {
+                finalIssues.push(`<div class="font-bold text-amber-700 mt-3 mb-1">🟡 检查 2：同一天同岗位刚好 2 人（${sameDayDup.length} 笔）</div>`);
+                finalIssues.push(...sameDayDup);
+            }
+            if (consecutiveSame.length > 0) {
+                finalIssues.push(`<div class="font-bold text-orange-700 mt-3 mb-1">🟠 检查 3：同员工连续 ≥3 天同岗位（${consecutiveSame.length} 笔）</div>`);
+                finalIssues.push(...consecutiveSame);
+            }
+            if (comboMismatch.length > 0) {
+                finalIssues.push(`<div class="font-bold text-blue-700 mt-3 mb-1">🔵 检查 4：人数 vs 组合对不上（${comboMismatch.length} 笔）</div>`);
+                finalIssues.push(...comboMismatch);
+            }
+
+            if (finalIssues.length === 0) {
+                showModal('🔍 排班校验结果', ['✨ 太棒了！4 项检查全部通过。']);
+                return;
+            }
+
+            // 统计
+            const summary = `共侦测 ${moreThan2.length + sameDayDup.length + consecutiveSame.length + comboMismatch.length} 笔异常`;
+            showModal('🔍 排班校验结果（' + summary + '）', finalIssues);
+        }
                 });
                 Object.keys(shiftCount).forEach(s => {
                     if (shiftCount[s].length > 2) {
