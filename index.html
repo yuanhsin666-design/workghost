@@ -61,7 +61,6 @@
                 <p class="text-xs text-slate-400">💡 提示：请确保 Google 试算表已设为「知道连结的人都能检视」，且员工姓名与上方列表相符，休假格填入 **1**。</p>
             </div>
 
-            <!-- 每日岗位组合设定 -->
             <div class="space-y-3 border-t border-slate-100 pt-6">
                 <label class="block font-bold text-slate-700 text-sm">📋 每日岗位组合设定（依当天上班人数自动套用）：</label>
                 <div class="flex flex-col sm:flex-row gap-3">
@@ -73,7 +72,6 @@
                 <p class="text-xs text-slate-400">💡 排班时：当天上班人数 → 找最接近的组合 → 按日期轮流分配。人数超过组合时，多出的给「支援」。</p>
             </div>
 
-            <!-- 锁定管理 -->
             <div class="space-y-3 border-t border-slate-100 pt-6">
                 <label class="block font-bold text-slate-700 text-sm">🔒 锁定管理：</label>
                 <div class="flex flex-wrap gap-2 items-center">
@@ -144,18 +142,17 @@
         let employees = [];
         let combos = [];
         let currentSchedules = {};
-        let lockedCells = new Set();   // "employee_dateStr"
+        let lockedCells = new Set();
         let isEditMode = false;
 
         const CLOUD_URL_KEY = 'cloud_sheet_url';
 
-        // ===== 云端设定 =====
         async function saveCloudUrl(url) {
             const { error } = await _supabase.from('settings').upsert(
                 { key: CLOUD_URL_KEY, value: url, updated_at: new Date().toISOString() },
                 { onConflict: 'key' }
             );
-            if (error) console.error('储存云端假表连结失败:', error);
+            if (error) console.error('储存失败:', error);
         }
 
         async function loadCloudUrl() {
@@ -165,10 +162,9 @@
             return data ? data.value : '';
         }
 
-        // ===== 岗位组合 =====
         async function loadCombos() {
             const { data, error } = await _supabase.from('shift_combos').select('*').order('headcount', { ascending: true });
-            if (error) { console.error('读取岗位组合失败:', error); combos = []; return; }
+            if (error) { console.error('读取组合失败:', error); combos = []; return; }
             combos = (data || []).map(row => ({
                 id: row.id,
                 headcount: row.headcount,
@@ -183,7 +179,7 @@
             const shiftText = shInput.value.trim();
 
             if (!hc || hc < 1) { alert('请输入正确的人数！'); return; }
-            if (!shiftText) { alert('请输入岗位（用逗号分隔）！'); return; }
+            if (!shiftText) { alert('请输入岗位！'); return; }
 
             const shiftArr = shiftText.split(/[,，]/).map(s => s.trim()).filter(s => s);
             if (shiftArr.length === 0) { alert('岗位不能为空！'); return; }
@@ -193,7 +189,7 @@
                 { headcount: hc, shifts: shiftArr, updated_at: new Date().toISOString() },
                 { onConflict: 'headcount' }
             );
-            if (error) { alert('储存组合失败: ' + error.message); updateSyncStatus('已同步云端', 'bg-emerald-500 text-white'); return; }
+            if (error) { alert('储存失败: ' + error.message); updateSyncStatus('已同步云端', 'bg-emerald-500 text-white'); return; }
 
             hcInput.value = '';
             shInput.value = '';
@@ -201,7 +197,7 @@
             renderComboList();
             renderTable();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-            alert(`已储存「${hc} 人上班」的岗位组合！`);
+            alert(`已储存「${hc} 人上班」的组合！`);
         }
 
         async function deleteCombo(id, headcount) {
@@ -262,22 +258,16 @@
             return best;
         }
 
-        // ===== 锁定资料 =====
         function lockKey(emp, dateStr) { return `${emp}_${dateStr}`; }
-
-        function isLocked(emp, dateStr) {
-            return lockedCells.has(lockKey(emp, dateStr));
-        }
+        function isLocked(emp, dateStr) { return lockedCells.has(lockKey(emp, dateStr)); }
 
         async function loadLockedCells() {
             const monthKey = document.getElementById('month-select').value;
             const { data, error } = await _supabase
                 .from('locked_cells').select('employee, date_str').eq('month_key', monthKey);
             lockedCells = new Set();
-            if (error) { console.error('读取锁定资料失败:', error); return; }
-            (data || []).forEach(row => {
-                lockedCells.add(lockKey(row.employee, row.date_str));
-            });
+            if (error) { console.error('读取锁定失败:', error); return; }
+            (data || []).forEach(row => lockedCells.add(lockKey(row.employee, row.date_str)));
             updateLockStat();
         }
 
@@ -307,36 +297,25 @@
             renderTable();
         }
 
-        // 单格切换锁定（小锁图示用）
         async function toggleLockCell(emp, dateStr) {
-            if (isLocked(emp, dateStr)) {
-                await unlockCell(emp, dateStr);
-            } else {
-                await lockCell(emp, dateStr, 'manual');
-            }
+            if (isLocked(emp, dateStr)) await unlockCell(emp, dateStr);
+            else await lockCell(emp, dateStr, 'manual');
         }
 
-        // 一键锁定整月（锁所有员工 × 所有日期，含空白）
         async function lockAllMonth() {
             if (employees.length === 0) { alert('请先添加员工！'); return; }
-            if (!confirm(`确定要锁定本月【所有格子】吗？\n（含空白格、固定休假格，共 ${employees.length} 人 × 整月）\n锁定后连智能排班都会跳过。`)) return;
+            if (!confirm(`确定锁定本月所有格子？（${employees.length} 人 × 整月）`)) return;
 
             const monthKey = document.getElementById('month-select').value;
             const [year, month] = monthKey.split('-').map(Number);
             const daysInMonth = new Date(year, month, 0).getDate();
 
             updateSyncStatus('锁定中...', 'bg-amber-500 text-white');
-
             const batch = [];
             employees.forEach(emp => {
                 for (let d = 1; d <= daysInMonth; d++) {
                     const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
-                    batch.push({
-                        month_key: monthKey,
-                        employee: emp,
-                        date_str: dateStr,
-                        reason: 'all_month'
-                    });
+                    batch.push({ month_key: monthKey, employee: emp, date_str: dateStr, reason: 'all_month' });
                 }
             });
 
@@ -350,25 +329,21 @@
             await loadLockedCells();
             renderTable();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-            alert(`已锁定本月 ${dedupData.length} 格！`);
+            alert(`已锁定 ${dedupData.length} 格！`);
         }
 
-        // 一键解锁整月
         async function unlockAllMonth() {
-            if (!confirm('确定要解锁本月【所有格子】吗？')) return;
+            if (!confirm('确定解锁本月所有格子？')) return;
             const monthKey = document.getElementById('month-select').value;
             updateSyncStatus('解锁中...', 'bg-amber-500 text-white');
-
             const { error } = await _supabase.from('locked_cells').delete().eq('month_key', monthKey);
             if (error) { alert('解锁失败: ' + error.message); return; }
-
             await loadLockedCells();
             renderTable();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
             alert('本月所有锁定已解除！');
         }
 
-        // 锁定历史日期（今天以前，不含今天）
         async function lockHistoryDates() {
             if (employees.length === 0) { alert('请先添加员工！'); return; }
             const monthKey = document.getElementById('month-select').value;
@@ -378,7 +353,6 @@
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
-            // 找出「今天以前」的日期
             const pastDays = [];
             for (let d = 1; d <= daysInMonth; d++) {
                 const dt = new Date(year, month - 1, d);
@@ -386,25 +360,15 @@
                 if (dt < today) pastDays.push(d);
             }
 
-            if (pastDays.length === 0) {
-                alert('本月没有「今天以前」的日期可锁定。');
-                return;
-            }
-
-            if (!confirm(`确定要锁定本月 ${pastDays.length} 天（今天以前）的所有格子吗？\n（共 ${employees.length} 人 × ${pastDays.length} 天）`)) return;
+            if (pastDays.length === 0) { alert('本月没有「今天以前」的日期。'); return; }
+            if (!confirm(`确定锁定本月 ${pastDays.length} 天（今天以前）所有格子？`)) return;
 
             updateSyncStatus('锁定中...', 'bg-amber-500 text-white');
-
             const batch = [];
             employees.forEach(emp => {
                 pastDays.forEach(d => {
                     const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
-                    batch.push({
-                        month_key: monthKey,
-                        employee: emp,
-                        date_str: dateStr,
-                        reason: 'history'
-                    });
+                    batch.push({ month_key: monthKey, employee: emp, date_str: dateStr, reason: 'history' });
                 });
             });
 
@@ -418,10 +382,9 @@
             await loadLockedCells();
             renderTable();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-            alert(`已锁定历史日期：${pastDays.length} 天 × ${employees.length} 人 = ${dedupData.length} 格。`);
+            alert(`已锁定历史日期：${dedupData.length} 格。`);
         }
 
-        // ===== 初始化 =====
         async function init() {
             updateSyncStatus('连线中...', 'bg-amber-500 text-white');
             await loadEmployees();
@@ -454,7 +417,6 @@
             const name = input.value.trim();
             if (!name) return;
             if (employees.includes(name)) { alert('员工已存在！'); return; }
-
             updateSyncStatus('同步中...', 'bg-amber-500 text-white');
             await _supabase.from('employees').insert([{ name }]);
             input.value = '';
@@ -467,9 +429,8 @@
         async function removeSelectedEmployee() {
             const select = document.getElementById('employee-select-target');
             const name = select.value;
-            if (!name) { alert('请先在下拉选单选择要移除的员工！'); return; }
-            if (!confirm(`确定要移除员工「${name}」吗？`)) return;
-
+            if (!name) { alert('请先选择员工！'); return; }
+            if (!confirm(`确定移除员工「${name}」吗？`)) return;
             updateSyncStatus('同步中...', 'bg-amber-500 text-white');
             await _supabase.from('employees').delete().eq('name', name);
             await _supabase.from('schedules').delete().eq('employee', name);
@@ -562,48 +523,36 @@
                     const locked = isLocked(emp, dateStr);
 
                     if (!isEditMode) {
-                        // 检视模式
                         let badgeClass = 'text-slate-400';
                         if (isRest) badgeClass = 'bg-rose-100 text-rose-700 font-bold px-1.5 py-0.5 rounded text-xs';
                         else if (displayShift) badgeClass = 'bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-xs font-medium';
 
-                        const lockIcon = locked ? '<span class="text-slate-500 text-[10px]">🔒</span>' : '';
+                        const lockIcon = locked ? '<span class="absolute top-0 right-0 text-[9px]">🔒</span>' : '';
                         html += `<td class="p-2 text-center relative">
-                            ${lockIcon ? `<div class="absolute top-0 right-0 text-[9px]">${lockIcon}</div>` : ''}
+                            ${lockIcon}
                             <span class="${badgeClass}">${displayShift || '-'}</span>
                         </td>`;
                     } else {
-                        // 手动修改模式
                         if (isRest) {
-                            // 固定休假：锁死
-                            html += `<td class="p-1 text-center relative">
-                                <span class="inline-block w-full bg-rose-100 text-rose-700 font-bold border border-rose-300 rounded p-1 text-xs cursor-not-allowed" title="固定休假，不可修改">
-                                    🔒 休
-                                </span>
+                            html += `<td class="p-1 text-center">
+                                <span class="inline-block w-full bg-rose-100 text-rose-700 font-bold border border-rose-300 rounded p-1 text-xs cursor-not-allowed" title="固定休假">🔒 休</span>
                             </td>`;
                         } else if (locked) {
-                            // 锁定格：不可改，但有小锁可点解锁
                             html += `<td class="p-1 text-center relative">
-                                <span class="inline-block w-full bg-slate-200 text-slate-700 font-bold border border-slate-400 rounded p-1 text-xs cursor-not-allowed" title="已锁定，点右上小锁解锁">
-                                    🔒 ${displayShift || '-'}
-                                </span>
+                                <span class="inline-block w-full bg-slate-200 text-slate-700 font-bold border border-slate-400 rounded p-1 text-xs cursor-not-allowed">🔒 ${displayShift || '-'}</span>
                                 <button onclick="toggleLockCell('${emp}', '${dateStr}')" class="absolute -top-1 -right-1 bg-white border border-slate-400 rounded-full w-4 h-4 flex items-center justify-center text-[9px] hover:bg-amber-100" title="点击解锁">🔓</button>
                             </td>`;
                         } else {
-                            // 可编辑格
                             html += `<td class="p-1 text-center relative">
                                 <select onchange="handleShiftChange('${emp}', '${dateStr}', this.value)" class="w-full text-center border rounded p-1 text-xs bg-transparent border-slate-200 focus:ring-2 focus:ring-indigo-500">
                                     <option value="" ${displayShift === '' ? 'selected' : ''}>-</option>`;
-
                             allShiftNames.forEach(s => {
                                 const selected = (displayShift === s) ? 'selected' : '';
                                 html += `<option value="${s}" ${selected}>${s}</option>`;
                             });
-
                             if (displayShift && !allShiftNames.includes(displayShift)) {
                                 html += `<option value="${displayShift}" selected>${displayShift}</option>`;
                             }
-
                             html += `</select>
                                 <button onclick="toggleLockCell('${emp}', '${dateStr}')" class="absolute -top-1 -right-1 bg-white border border-slate-300 rounded-full w-4 h-4 flex items-center justify-center text-[9px] opacity-40 hover:opacity-100 hover:bg-amber-100" title="点击锁定">🔒</button>
                             </td>`;
@@ -616,15 +565,340 @@
             table.innerHTML = html;
         }
 
-        async function handleShiftChange(employee, dateStr, shift) {
+               async function handleShiftChange(employee, dateStr, shift) {
             const key = `${employee}_${dateStr}`;
             const existing = currentSchedules[key];
 
-            // 锁定格不能改
             if (isLocked(employee, dateStr)) {
                 alert('此格已锁定，无法修改。请先解锁。');
                 renderTable();
                 return;
             }
 
-            if (isFixedRest(existing) && shift !==
+            if (isFixedRest(existing) && shift !== '休' && shift !== '休(固定)' && shift !== '') {
+                alert('此为公司固定休假，不可改为其他岗位。');
+                renderTable();
+                return;
+            }
+
+            const monthKey = document.getElementById('month-select').value;
+            updateSyncStatus('同步中...', 'bg-amber-500 text-white');
+
+            if (shift === '') {
+                await _supabase.from('schedules').delete().match({ employee: employee, date_str: dateStr });
+                delete currentSchedules[key];
+            } else {
+                const { error } = await _supabase.from('schedules').upsert([
+                    { month_key: monthKey, employee: employee, date_str: dateStr, shift: shift }
+                ], { onConflict: 'employee,date_str' });
+                if (error) { alert('储存失败: ' + error.message); return; }
+                currentSchedules[key] = shift;
+            }
+            updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+            renderTable();
+        }
+
+        function validateDuplicateShifts() {
+            const monthKey = document.getElementById('month-select').value;
+            const [year, month] = monthKey.split('-').map(Number);
+            const daysInMonth = new Date(year, month, 0).getDate();
+            let issues = [];
+
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
+                let shiftCount = {};
+                employees.forEach(emp => {
+                    const shift = currentSchedules[`${emp}_${dateStr}`];
+                    if (shift && !isFixedRest(shift)) {
+                        if (!shiftCount[shift]) shiftCount[shift] = [];
+                        shiftCount[shift].push(emp);
+                    }
+                });
+                Object.keys(shiftCount).forEach(s => {
+                    if (shiftCount[s].length > 2) {
+                        issues.push(`📅 ${month}月${d}日：岗位 **[${s}]** 人数较多（共 ${shiftCount[s].length} 人：${shiftCount[s].join(', ')}）`);
+                    }
+                });
+            }
+            showModal('🔍 排班重复岗位校验结果', issues.length > 0 ? issues : ['✨ 未侦测到异常的岗位重复指派。']);
+        }
+
+        function validateConsecutiveShifts() {
+            let issues = [];
+            const monthKey = document.getElementById('month-select').value;
+            const [year, month] = monthKey.split('-').map(Number);
+            const daysInMonth = new Date(year, month, 0).getDate();
+
+            employees.forEach(emp => {
+                let consecutiveDays = 0;
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
+                    const shift = currentSchedules[`${emp}_${dateStr}`] || '';
+                    if (shift && !isFixedRest(shift)) {
+                        consecutiveDays++;
+                        if (consecutiveDays >= 5) {
+                            issues.push(`⚠️ 员工 **${emp}** 自 ${d - consecutiveDays + 1}日 至 ${d}日 已**连续上班 ${consecutiveDays} 天**。`);
+                        }
+                    } else {
+                        consecutiveDays = 0;
+                    }
+                }
+            });
+            showModal('⚠️ 连排岗位/过劳校验结果', issues.length > 0 ? issues : ['✨ 所有员工的连续排班天数均在合理范围内。']);
+        }
+
+        function showModal(title, contentArray) {
+            document.getElementById('modal-title').innerText = title;
+            const container = document.getElementById('modal-content');
+            let html = '';
+            contentArray.forEach(item => {
+                html += `<div class="p-3 bg-slate-50 rounded-xl border border-slate-100">${item}</div>`;
+            });
+            container.innerHTML = html;
+            document.getElementById('modal-container').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('modal-container').classList.add('hidden');
+        }
+
+        async function importCloudLeaves() {
+            const rawUrl = document.getElementById('cloud-sheet-url').value.trim();
+            if (!rawUrl) { alert('请先贴上云端假表连结！'); return; }
+            if (employees.length === 0) { alert('请先添加员工！'); return; }
+
+            await saveCloudUrl(rawUrl);
+
+            let csvUrl = rawUrl;
+            const idMatch = rawUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+            if (idMatch) {
+                const sheetId = idMatch[1];
+                const gidMatch = rawUrl.match(/[#&?]gid=([0-9]+)/);
+                const gid = gidMatch ? gidMatch[1] : '0';
+                csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+            }
+
+            updateSyncStatus('读取云端假表中...', 'bg-amber-500 text-white');
+
+            try {
+                const response = await fetch(csvUrl);
+                if (!response.ok) throw new Error('无法读取，请确认权限为「知道连结的人都能检视」！');
+                const csvText = await response.text();
+
+                const rows = csvText.split(/\r?\n/).map(line => {
+                    const result = [];
+                    let inQuotes = false, current = '';
+                    for (let i = 0; i < line.length; i++) {
+                        const c = line[i];
+                        if (c === '"') { inQuotes = !inQuotes; }
+                        else if (c === ',' && !inQuotes) { result.push(current); current = ''; }
+                        else { current += c; }
+                    }
+                    result.push(current);
+                    return result.map(s => s.trim().replace(/^["']|["']$/g, ''));
+                });
+
+                const monthKey = document.getElementById('month-select').value;
+                const [year, month] = monthKey.split('-').map(Number);
+                const daysInMonth = new Date(year, month, 0).getDate();
+
+                const normalize = (s) => String(s || '')
+                    .replace(/[\s\u3000]/g, '')
+                    .replace(/[()（）\[\]【】]/g, '')
+                    .toLowerCase();
+
+                const empNormMap = {};
+                employees.forEach(e => { empNormMap[normalize(e)] = e; });
+
+                const dayColMap = {};
+                for (let r = 0; r < Math.min(rows.length, 10); r++) {
+                    const row = rows[r];
+                    const dayCells = [];
+                    row.forEach((cell, cIdx) => {
+                        if (!cell) return;
+                        const clean = cell.toString().replace(/[日号號\s]/g, '').trim();
+                        const num = parseInt(clean, 10);
+                        if (!isNaN(num) && num >= 1 && num <= 31 && String(num) === clean) {
+                            dayCells.push({ cIdx, num });
+                        }
+                    });
+                    if (dayCells.length >= 25) {
+                        dayCells.forEach(({ cIdx, num }) => { dayColMap[cIdx] = num; });
+                        break;
+                    }
+                }
+
+                if (Object.keys(dayColMap).length === 0) {
+                    showModal('❌ 找不到日期表头', ['请确认试算表第 2 列是纯数字 1~31，且至少 25 栏。']);
+                    updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+                    return;
+                }
+
+                const empRowMap = {};
+                rows.forEach((row, rIdx) => {
+                    row.forEach((cell) => {
+                        const norm = normalize(cell);
+                        if (!norm) return;
+                        if (empNormMap[norm] && !empRowMap[rIdx]) {
+                            empRowMap[rIdx] = empNormMap[norm];
+                        }
+                    });
+                });
+
+                const batchData = [];
+                Object.keys(empRowMap).forEach(rIdx => {
+                    const empName = empRowMap[rIdx];
+                    const rowData = rows[rIdx] || [];
+                    Object.keys(dayColMap).forEach(cIdx => {
+                        const dayNum = dayColMap[cIdx];
+                        if (dayNum < 1 || dayNum > daysInMonth) return;
+                        const val = (rowData[cIdx] || '').toString().trim();
+                        if (val === '1' || val === '１' || val.toLowerCase() === 'true' || val === '休') {
+                            batchData.push({
+                                month_key: monthKey,
+                                employee: empName,
+                                date_str: `${monthKey}-${String(dayNum).padStart(2, '0')}`,
+                                shift: '休'
+                            });
+                        }
+                    });
+                });
+
+                if (batchData.length === 0) {
+                    showModal('⚠️ 未侦测到休假', ['请确认员工姓名一致，且休假格填 1。']);
+                    updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+                    return;
+                }
+
+                const dedupMap = new Map();
+                batchData.forEach(item => dedupMap.set(`${item.employee}_${item.date_str}`, item));
+                const dedupData = Array.from(dedupMap.values());
+
+                const { error } = await _supabase.from('schedules').upsert(dedupData, { onConflict: 'employee,date_str' });
+                if (error) { alert('写入失败: ' + error.message); return; }
+
+                await loadSchedulesFromCloud();
+                renderTable();
+                updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+                alert(`🎉 成功汇入 ${dedupData.length} 笔休假。`);
+
+            } catch (err) {
+                alert('抓取失败: ' + err.message);
+                updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+            }
+        }
+
+        async function autoSchedule() {
+            if (employees.length === 0) { alert('请先添加员工！'); return; }
+            if (combos.length === 0) { alert('请先新增岗位组合！'); return; }
+            if (!confirm('确定执行智能排班？\n（固定休假与锁定格将会跳过）')) return;
+
+            const monthKey = document.getElementById('month-select').value;
+            const [year, month] = monthKey.split('-').map(Number);
+            const daysInMonth = new Date(year, month, 0).getDate();
+
+            updateSyncStatus('读取最新资料...', 'bg-amber-500 text-white');
+            await loadSchedulesFromCloud();
+            await loadLockedCells();
+
+            updateSyncStatus('排班运算中...', 'bg-amber-500 text-white');
+
+            let batchData = [];
+            const warnings = [];
+
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
+
+                // 当天上班 = 没休 且 没锁定
+                const workingEmps = employees.filter(emp => {
+                    const key = `${emp}_${dateStr}`;
+                    if (isFixedRest(currentSchedules[key])) return false;
+                    if (isLocked(emp, dateStr)) return false;
+                    return true;
+                });
+
+                if (workingEmps.length === 0) continue;
+
+                const combo = findClosestCombo(workingEmps.length);
+                if (!combo) continue;
+
+                const offset = (d - 1) % combo.shifts.length;
+                workingEmps.forEach((emp, idx) => {
+                    let shift;
+                    if (idx < combo.shifts.length) {
+                        shift = combo.shifts[(idx + offset) % combo.shifts.length];
+                    } else {
+                        shift = '支援';
+                    }
+                    batchData.push({
+                        month_key: monthKey,
+                        employee: emp,
+                        date_str: dateStr,
+                        shift: shift
+                    });
+                });
+
+                if (workingEmps.length !== combo.headcount) {
+                    warnings.push(`${month}月${d}日：${workingEmps.length} 人，套用 ${combo.headcount} 人组合`);
+                }
+            }
+
+            if (batchData.length === 0) {
+                alert('没有可排班的资料。');
+                updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+                return;
+            }
+
+            const dedupMap = new Map();
+            batchData.forEach(item => dedupMap.set(`${item.employee}_${item.date_str}`, item));
+            const dedupData = Array.from(dedupMap.values());
+
+            const { error } = await _supabase.from('schedules').upsert(dedupData, { onConflict: 'employee,date_str' });
+            if (error) { alert('排班失败: ' + error.message); return; }
+
+            await loadSchedulesFromCloud();
+            renderTable();
+            updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+
+            let msg = `智能排班完成！共 ${dedupData.length} 笔。\n（固定休假与锁定格已跳过）`;
+            if (warnings.length > 0) {
+                msg += `\n\n⚠️ ${warnings.length} 天人数与组合不完全符合：\n` + warnings.slice(0, 10).join('\n');
+                if (warnings.length > 10) msg += `\n...还有 ${warnings.length - 10} 天`;
+            }
+            alert(msg);
+        }
+
+        async function clearMonthLeaves() {
+            if (!confirm('确定清空当月所有休假？')) return;
+            const monthKey = document.getElementById('month-select').value;
+            updateSyncStatus('清空中...', 'bg-rose-500 text-white');
+            const { error } = await _supabase.from('schedules').delete().eq('month_key', monthKey).eq('shift', '休');
+            if (error) { alert('清空失败: ' + error.message); return; }
+            await loadSchedulesFromCloud();
+            renderTable();
+            updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+            alert('当月休假已清空！');
+        }
+
+        async function clearMonthData() {
+            if (!confirm('警告：确定清空当月所有排班与假表？')) return;
+            const monthKey = document.getElementById('month-select').value;
+            updateSyncStatus('清空中...', 'bg-rose-500 text-white');
+            const { error } = await _supabase.from('schedules').delete().eq('month_key', monthKey);
+            if (error) { alert('清空失败: ' + error.message); return; }
+            currentSchedules = {};
+            renderTable();
+            updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+            alert('当月资料已清空！');
+        }
+
+        document.getElementById('month-select').addEventListener('change', async () => {
+            await loadSchedulesFromCloud();
+            await loadLockedCells();
+            renderTable();
+        });
+
+        init();
+    </script>
+</body>
+</html>
