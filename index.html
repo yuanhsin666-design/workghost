@@ -220,6 +220,7 @@
             await loadCombos();
             renderComboList();
             renderTable();
+            renderStats(); 
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
             alert(`已储存「${hc} 人上班」的组合！`);
         }
@@ -232,6 +233,7 @@
             await loadCombos();
             renderComboList();
             renderTable();
+            renderStats(); 
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
         }
 
@@ -309,6 +311,7 @@
             lockedCells.add(lockKey(emp, dateStr));
             updateLockStat();
             renderTable();
+            renderStats();
         }
 
         async function unlockCell(emp, dateStr) {
@@ -318,6 +321,7 @@
             lockedCells.delete(lockKey(emp, dateStr));
             updateLockStat();
             renderTable();
+            renderStats();
         }
 
         async function toggleLockCell(emp, dateStr) {
@@ -352,6 +356,7 @@
 
             await loadLockedCells();
             renderTable();
+            renderStats();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
         }
 
@@ -381,6 +386,7 @@
 
             await loadLockedCells();
             renderTable();
+            renderStats();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
             alert(`已锁定 ${dedupData.length} 格！`);
         }
@@ -393,6 +399,7 @@
             if (error) { alert('解锁失败: ' + error.message); return; }
             await loadLockedCells();
             renderTable();
+            renderStats();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
             alert('本月所有锁定已解除！');
         }
@@ -434,6 +441,7 @@
 
             await loadLockedCells();
             renderTable();
+            renderStats();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
             alert(`已锁定历史日期：${dedupData.length} 格。`);
         }
@@ -513,8 +521,26 @@
             });
             html += '</tbody>';
 
-            table.innerHTML = html;
+                table.innerHTML = html;
         }
+
+        async function init() {
+            updateSyncStatus('连线中...', 'bg-amber-500 text-white');
+            await loadEmployees();
+            await loadCombos();
+            await loadSchedulesFromCloud();
+            await loadLockedCells();
+
+            const savedUrl = await loadCloudUrl();
+            if (savedUrl) document.getElementById('cloud-sheet-url').value = savedUrl;
+
+            renderEmployeeSelect();
+            renderComboList();
+            renderTable();
+            renderStats();
+            updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+        }
+
         function updateSyncStatus(text, className) {
             const badge = document.getElementById('sync-status');
             badge.className = `text-xs px-3 py-1.5 rounded-full font-medium shadow-inner ${className}`;
@@ -537,6 +563,7 @@
             await loadEmployees();
             renderEmployeeSelect();
             renderTable();
+            renderStats();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
         }
 
@@ -554,6 +581,7 @@
             await loadLockedCells();
             renderEmployeeSelect();
             renderTable();
+            renderStats();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
         }
 
@@ -593,6 +621,7 @@
                 tip.innerText = "🔒 检视模式（点格子锁定/解锁；开手动修改编辑）";
             }
             renderTable();
+            renderStats();
         }
 
         function isFixedRest(shift) {
@@ -737,12 +766,14 @@
             if (isLocked(employee, dateStr)) {
                 alert('此格已锁定，无法修改。请先解锁。');
                 renderTable();
+                renderStats();
                 return;
             }
 
             if (isFixedRest(existing) && shift !== '休' && shift !== '休(固定)' && shift !== '') {
                 alert('此为公司固定休假，不可改为其他岗位。');
                 renderTable();
+                renderStats();
                 return;
             }
 
@@ -761,6 +792,7 @@
             }
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
             renderTable();
+            renderStats();
         }
 
         function validateDuplicateShifts() {
@@ -1032,6 +1064,7 @@
 
                 await loadSchedulesFromCloud();
                 renderTable();
+                renderStats();
                 updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
                 alert(`🎉 成功汇入 ${dedupData.length} 笔休假。`);
 
@@ -1180,6 +1213,7 @@
 
             await loadSchedulesFromCloud();
             renderTable();
+            renderStats();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
 
             let msg = `智能排班完成！共 ${dedupData.length} 笔。\n（固定休假与锁定格已跳过）`;
@@ -1229,6 +1263,7 @@
 
             await loadSchedulesFromCloud();
             renderTable();
+            renderStats();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
             alert('当月休假已清空！');
         }
@@ -1313,6 +1348,7 @@
             await loadSchedulesFromCloud();
             await loadLockedCells();
             renderTable();
+            renderStats();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
 
             alert(`已重置！\n锁定 ${lockedSet.size} 格已保留。\n休假已保留。`);
