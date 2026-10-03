@@ -685,6 +685,35 @@
             renderTable();
         });
 
+        // 💾 记住云端假表连结
+        const CLOUD_URL_KEY = 'workghost_cloud_sheet_url_v1';
+
+        // 页面载入时，自动填入上次的网址
+        function restoreCloudUrl() {
+            const saved = localStorage.getItem(CLOUD_URL_KEY);
+            if (saved) {
+                document.getElementById('cloud-sheet-url').value = saved;
+                console.log('✅ 已还原上次的云端假表连结');
+            }
+        }
+
+        // 输入框有变动就自动存
+        document.getElementById('cloud-sheet-url').addEventListener('input', (e) => {
+            const val = e.target.value.trim();
+            if (val) {
+                localStorage.setItem(CLOUD_URL_KEY, val);
+            } else {
+                localStorage.removeItem(CLOUD_URL_KEY);
+            }
+        });
+
+        // 点「抓取」或「清空休假」时也顺手存一次（保险）
+        document.querySelector('button[onclick="importCloudLeaves()"]').addEventListener('click', () => {
+            const val = document.getElementById('cloud-sheet-url').value.trim();
+            if (val) localStorage.setItem(CLOUD_URL_KEY, val);
+        });
+
+        restoreCloudUrl();
         init();
     </script>
 </body>
