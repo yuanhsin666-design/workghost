@@ -1004,12 +1004,15 @@
             alert(msg);
         }
 
-        async function clearMonthLeaves() {
-            if (!confirm('确定清空当月所有休假？')) return;
+                async function clearMonthLeaves() {
+            if (!confirm('确定清空当月所有休假？\n（只清休假，其他岗位不动）')) return;
             const monthKey = document.getElementById('month-select').value;
             updateSyncStatus('清空中...', 'bg-rose-500 text-white');
-            const { error } = await _supabase.from('schedules').delete().eq('month_key', monthKey).eq('shift', '休');
-            if (error) { alert('清空失败: ' + error.message); return; }
+
+            // 清掉两种格式的休
+            await _supabase.from('schedules').delete().eq('month_key', monthKey).eq('shift', '休');
+            await _supabase.from('schedules').delete().eq('month_key', monthKey).eq('shift', '休(固定)');
+
             await loadSchedulesFromCloud();
             renderTable();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
@@ -1017,15 +1020,25 @@
         }
 
         async function clearMonthData() {
-            if (!confirm('警告：确定清空当月所有排班与假表？')) return;
+            if (!confirm('确定重置当月排班吗？\n（会清空所有排好的岗位，但保留导入的休假和锁定）')) return;
             const monthKey = document.getElementById('month-select').value;
             updateSyncStatus('清空中...', 'bg-rose-500 text-white');
-            const { error } = await _supabase.from('schedules').delete().eq('month_key', monthKey);
+
+            // 只删「非休」的班，保留休
+            // Supabase 没有直接「不等于」的 delete，得用 not
+            const { error } = await _supabase.from('schedules')
+                .delete()
+                .eq('month_key', monthKey)
+                .neq('shift', '休');
+
             if (error) { alert('清空失败: ' + error.message); return; }
-            currentSchedules = {};
+
+            // 重新载入
+            await loadSchedulesFromCloud();
+            await loadLockedCells();
             renderTable();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-            alert('当月资料已清空！');
+            alert('已重置当月排班，休假与锁定已保留！');
         }
 
         function copyTable() {
