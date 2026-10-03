@@ -168,11 +168,21 @@
         async function loadCombos() {
             const { data, error } = await _supabase.from('shift_combos').select('*').order('headcount', { ascending: true });
             if (error) { console.error('读取组合失败:', error); combos = []; return; }
-            combos = (data || []).map(row => ({
-                id: row.id,
-                headcount: row.headcount,
-                shifts: Array.isArray(row.shifts) ? row.shifts : JSON.parse(row.shifts || '[]')
-            }));
+            combos = (data || []).map(row => {
+                let arr = Array.isArray(row.shifts) ? row.shifts : JSON.parse(row.shifts || '[]');
+                // 去掉重复岗位（保持顺序）
+                const seen = new Set();
+                arr = arr.filter(s => {
+                    if (seen.has(s)) return false;
+                    seen.add(s);
+                    return true;
+                });
+                return {
+                    id: row.id,
+                    headcount: row.headcount,
+                    shifts: arr
+                };
+            });
         }
 
         async function saveCombo() {
