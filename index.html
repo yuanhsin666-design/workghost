@@ -1026,25 +1026,37 @@
                     return bMax - aMax;
                 });
 
-                empSorted.forEach(emp => {
+                               empSorted.forEach(emp => {
                     const recentShifts = getRecentShifts(emp, d, monthKey, simSchedules, 2);
 
-                    // 1. 优先：不在最近 2 天的岗位
-                    let candidates = shiftPool.filter(s => !recentShifts.includes(s));
+                    // 1. 优先：不在最近 2 天 且 今天没人选过的岗位
+                    let candidates = shiftPool.filter(s =>
+                        !recentShifts.includes(s) && todayPickCount[s] === 0
+                    );
 
-                    // 2. 次选：候选为空 → 用全部
+                    // 2. 次选：只避开「今天已被选过」
+                    if (candidates.length === 0) {
+                        candidates = shiftPool.filter(s => todayPickCount[s] === 0);
+                    }
+
+                    // 3. 再退：只避开「最近 2 天做过」
+                    if (candidates.length === 0) {
+                        candidates = shiftPool.filter(s => !recentShifts.includes(s));
+                    }
+
+                    // 4. 最后：只能用全部（没办法避开）
                     if (candidates.length === 0) {
                         candidates = [...shiftPool];
                     }
 
-                    // 3. 均匀：选「今天被选次数最少」的
+                    // 5. 均匀：从候选里选「今天被选次数最少」的（此时应都为 0）
                     let minCount = Infinity;
                     candidates.forEach(s => {
                         if (todayPickCount[s] < minCount) minCount = todayPickCount[s];
                     });
                     const leastPicked = candidates.filter(s => todayPickCount[s] === minCount);
 
-                    // 4. 破平手：选「连续天数最少」的
+                    // 6. 破平手：选「连续天数最少」的
                     let minConsec = Infinity;
                     let pick = leastPicked[0];
                     leastPicked.forEach(s => {
