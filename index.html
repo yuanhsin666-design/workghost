@@ -1019,28 +1019,64 @@
             alert('当月休假已清空！');
         }
 
-                async function clearMonthData() {
-            if (!confirm('确定重置当月资料吗？\n（会清空排班岗位，但保留导入的休假与锁定）')) return;
+                   async function clearMonthData() {
+            if (!confirm('确定重置当月资料吗？\n（会清空没锁定的排班，锁定格与休假完全保留）')) return;
             const monthKey = document.getElementById('month-select').value;
             updateSyncStatus('清空中...', 'bg-rose-500 text-white');
 
-            // 只删「非休」的排班；休假保留
-            const { error } = await _supabase.from('schedules')
-                .delete()
-                .eq('month_key', monthKey)
-                .neq('shift', '休');
+            // 先读出当月所有锁定格（employee + date_str 组合）
+            const { data: lockedData, error: lockErr } = await _supabase
+                .from('locked_cells')
+                .select('employee, date_str')
+                .eq('month_key', monthKey);
 
-            if (error) { alert('清空失败: ' + error.message); return; }
+            if (lockErr) { alert('读取锁定失败: ' + lockErr.message); return; }
 
-            // locked_cells 表完全不动 → 锁定保留
+            const lockedSet = new Set();
+            (lockedData || []).forEach(row => {
+                lockedSet.add(`${row.employee}_${row.date_str}`);
+            });
+
+            // 读出当月所有 schedules
+            const { data: schedData, error: schedErr } = await _supabase
+                .from('schedules')
+                .select('employee, date_str, shift')
+                .eq('month_key', monthKey);
+
+            if (schedErr) { alert('读取排班失败: ' + schedErr.message); return; }
+
+            // 筛出要删的：非休 且 非锁定
+            const toDelete = (schedData || []).filter(item => {
+                const key = `${item.employee}_${item.date_str}`;
+                if (lockedSet.has(key)) return false;           // 锁定格 → 不动
+                if (item.shift === '休' || item.shift === '休(固定)' || item.shift === '休(固定假)') return false; // 休假 → 不动
+                return true;                                     // 其他 → 删
+            });
+
+            if (toDelete.length === 0) {
+                alert('没有需要清理的排班（可能都已锁定或无排班）。');
+                updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+                return;
+            }
+
+            // 逐笔删除（因为要 employee + date_str 两个条件）
+            // Supabase 删除可以用 in，但一次只能比一个栏位，所以用 OR 条件拼
+            // 更稳的做法：逐笔删（若资料多会慢，但你一个月最多 6 人 × 31 天，够快）
+            for (const item of toDelete) {
+                const { error } = await _supabase.from('schedules')
+                    .delete()
+                    .eq('month_key', monthKey)
+                    .eq('employee', item.employee)
+                    .eq('date_str', item.date_str);
+                if (error) { alert('删除失败: ' + error.message); return; }
+            }
 
             await loadSchedulesFromCloud();
             await loadLockedCells();
             renderTable();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-            alert('已重置当月排班，休假与锁定已保留！');
+            alert(`已重置！清了 ${toDelete.length} 笔排班。\n锁定格与休假完全保留。`);
         }
-
         function copyTable() {
             if (employees.length === 0) { alert('没有员工可复制！'); return; }
 
