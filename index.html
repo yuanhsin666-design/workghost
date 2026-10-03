@@ -1174,7 +1174,7 @@
                             pick = s;
                         }
                     });
-                    ... 后面照旧（更新 simSchedules、todayPickCount、连续计数、push batchData）
+                
                     // 更新模拟排班
                     simSchedules[`${emp}_${dateStr}`] = pick;
                     todayPickCount[pick] = (todayPickCount[pick] || 0) + 1;
@@ -1257,16 +1257,6 @@
             return result;
         }
         
-                // 辅助：算「某员工至今为止，某岗位拿了几次」（从 simSchedules 里数）
-        function getEmpShiftCount(emp, monthKey, daysInMonth, simSchedules, shiftName) {
-            let count = 0;
-            for (let d = 1; d <= daysInMonth; d++) {
-                const ds = `${monthKey}-${String(d).padStart(2, '0')}`;
-                const s = simSchedules[`${emp}_${ds}`] || '';
-                if (s === shiftName) count++;
-            }
-            return count;
-        }
 
                 async function clearMonthLeaves() {
             if (!confirm('确定清空当月所有休假？\n（只清休假，其他岗位不动）')) return;
