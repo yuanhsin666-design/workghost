@@ -18,7 +18,7 @@
                 <span class="text-3xl">⚙️</span>
                 <div>
                     <h1 class="text-2xl font-bold">智能动态排班管理设置</h1>
-                    <p class="text-xs text-indigo-200 mt-1">云端假表同步：1 = 休 ｜ 导入的休假为固定，排班不覆盖</p>
+                    <p class="text-xs text-indigo-200 mt-1">云端假表同步 ｜ 固定休假保护 ｜ 按人数自动套用岗位</p>
                 </div>
             </div>
             <div id="sync-status" class="text-xs bg-indigo-500 text-white px-4 py-2 rounded-full font-medium shadow-inner">
@@ -61,7 +61,6 @@
                 <p class="text-xs text-slate-400">💡 提示：请确保 Google 试算表已设为「知道连结的人都能检视」，且员工姓名与上方列表相符，休假格填入 **1**。</p>
             </div>
 
-      
             <!-- 每日岗位组合设定 -->
             <div class="space-y-3 border-t border-slate-100 pt-6">
                 <label class="block font-bold text-slate-700 text-sm">📋 每日岗位组合设定（依当天上班人数自动套用）：</label>
@@ -75,6 +74,7 @@
                 </div>
                 <p class="text-xs text-slate-400">💡 排班时：当天上班人数 → 找最接近的组合 → 按日期轮流分配。人数超过组合时，多出的给「支援」。</p>
             </div>
+
             <div class="flex flex-wrap gap-3 pt-2 items-center">
                 <button onclick="autoSchedule()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition shadow-sm">
                     ✨ 执行智能排班
@@ -126,13 +126,13 @@
         const _supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         let employees = [];
-        let shifts = ['休', 'OL FB JY', 'MT XO SH YS', '支援'];
+        let combos = [];              // [{headcount, shifts:[...]}]
         let currentSchedules = {};
         let isEditMode = false;
 
-        // ===== 设定存取（存到 Supabase，跨装置共用） =====
         const CLOUD_URL_KEY = 'cloud_sheet_url';
 
+        // ===== 云端设定存取 =====
         async function saveCloudUrl(url) {
             const { error } = await _supabase.from('settings').upsert(
                 { key: CLOUD_URL_KEY, value: url, updated_at: new Date().toISOString() },
@@ -143,28 +143,126 @@
 
         async function loadCloudUrl() {
             const { data, error } = await _supabase
-                .from('settings')
-                .select('value')
-                .eq('key', CLOUD_URL_KEY)
-                .maybeSingle();
+                .from('settings').select('value').eq('key', CLOUD_URL_KEY).maybeSingle();
             if (error) { console.error('读取云端假表连结失败:', error); return ''; }
             return data ? data.value : '';
         }
 
+        // ===== 岗位组合存取 =====
+        async function loadCombos() {
+            const { data, error } = await _supabase.from('shift_combos').select('*').order('headcount', { ascending: true });
+            if (error) { console.error('读取岗位组合失败:', error); combos = []; return; }
+            combos = (data || []).map(row => ({
+                id: row.id,
+                headcount: row.headcount,
+                shifts: Array.isArray(row.shifts) ? row.shifts : JSON.parse(row.shifts || '[]')
+            }));
+        }
+
+        async function saveCombo() {
+            const hcInput = document.getElementById('combo-headcount');
+            const shInput = document.getElementById('combo-shifts');
+            const hc = parseInt(hcInput.value, 10);
+            const shiftText = shInput.value.trim();
+
+            if (!hc || hc < 1) { alert('请输入正确的人数！'); return; }
+            if (!shiftText) { alert('请输入岗位（用逗号分隔）！'); return; }
+
+            const shiftArr = shiftText.split(/[,，]/).map(s => s.trim()).filter(s => s);
+            if (shiftArr.length === 0) { alert('岗位不能为空！'); return; }
+
+            updateSyncStatus('同步中...', 'bg-amber-500 text-white');
+            const { error } = await _supabase.from('shift_combos').upsert(
+                { headcount: hc, shifts: shiftArr, updated_at: new Date().toISOString() },
+                { onConflict: 'headcount' }
+            );
+            if (error) { alert('储存组合失败: ' + error.message); updateSyncStatus('已同步云端', 'bg-emerald-500 text-white'); return; }
+
+            hcInput.value = '';
+            shInput.value = '';
+            await loadCombos();
+            renderComboList();
+            renderTable();
+            updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+            alert(`已储存「${hc} 人上班」的岗位组合！`);
+        }
+
+        async function deleteCombo(id, headcount) {
+            if (!confirm(`确定删除「${headcount} 人上班」的组合吗？`)) return;
+            updateSyncStatus('同步中...', 'bg-amber-500 text-white');
+            const { error } = await _supabase.from('shift_combos').delete().eq('id', id);
+            if (error) { alert('删除失败: ' + error.message); return; }
+            await loadCombos();
+            renderComboList();
+            renderTable();
+            updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+        }
+
+        function editCombo(id) {
+            const c = combos.find(x => x.id === id);
+            if (!c) return;
+            document.getElementById('combo-headcount').value = c.headcount;
+            document.getElementById('combo-shifts').value = c.shifts.join(',');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function renderComboList() {
+            const container = document.getElementById('combo-list-container');
+            if (combos.length === 0) {
+                container.innerHTML = '<p class="text-xs text-slate-400 italic">目前没有岗位组合，请上方新增。</p>';
+                return;
+            }
+            let html = '';
+            combos.forEach(c => {
+                html += `<div class="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                    <span class="bg-indigo-600 text-white text-xs font-bold px-2 py-1 rounded">${c.headcount} 人</span>
+                    <span class="text-sm text-slate-700 flex-1">${c.shifts.join(' , ')}</span>
+                    <button onclick="editCombo(${c.id})" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">编辑</button>
+                    <button onclick="deleteCombo(${c.id}, ${c.headcount})" class="text-xs text-rose-600 hover:text-rose-800 font-medium">删除</button>
+                </div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        // 从所有组合里取出所有岗位（去重，含「休」）
+        function getAllShiftNames() {
+            const set = new Set();
+            combos.forEach(c => c.shifts.forEach(s => set.add(s)));
+            set.add('休');
+            set.add('支援');
+            return Array.from(set);
+        }
+
+        // 依当天上班人数找最接近的组合
+        function findClosestCombo(headcount) {
+            if (combos.length === 0) return null;
+            // 完全符合优先
+            const exact = combos.find(c => c.headcount === headcount);
+            if (exact) return exact;
+            // 找最接近的（差最小的）
+            let best = combos[0];
+            let bestDiff = Math.abs(combos[0].headcount - headcount);
+            combos.forEach(c => {
+                const diff = Math.abs(c.headcount - headcount);
+                if (diff < bestDiff) { best = c; bestDiff = diff; }
+            });
+            return best;
+        }
+
+        // ===== 初始化 =====
         async function init() {
             updateSyncStatus('连线中...', 'bg-amber-500 text-white');
             await loadEmployees();
-            loadShiftsLocal();
+            await loadCombos();
             await loadSchedulesFromCloud();
 
             const savedUrl = await loadCloudUrl();
             if (savedUrl) {
                 document.getElementById('cloud-sheet-url').value = savedUrl;
-                console.log('✅ 已从云端还原假表连结:', savedUrl);
             }
 
             renderEmployeeSelect();
-            renderShiftList();
+            renderComboList();
             renderTable();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
         }
@@ -220,53 +318,6 @@
             select.innerHTML = html;
         }
 
-        function loadShiftsLocal() {
-            const saved = localStorage.getItem('workghost_shifts_noshift_v1');
-            if (saved) shifts = JSON.parse(saved);
-        }
-        function saveShiftsLocal() {
-            localStorage.setItem('workghost_shifts_noshift_v1', JSON.stringify(shifts));
-        }
-
-        function addShifts() {
-            const input = document.getElementById('new-shift-name');
-            const text = input.value.trim();
-            if (!text) return;
-
-            const names = text.split('\n').map(s => s.trim()).filter(s => s);
-            names.forEach(name => {
-                if (!shifts.includes(name)) {
-                    shifts.push(name);
-                }
-            });
-            saveShiftsLocal();
-            input.value = '';
-            renderShiftList();
-            renderTable();
-            alert('成功添加岗位！');
-        }
-
-        function removeShift(name) {
-            if (name === '休') { alert('「休」为必要选项，无法删除！'); return; }
-            if (!confirm(`确定删除岗位「${name}」？`)) return;
-            shifts = shifts.filter(s => s !== name);
-            saveShiftsLocal();
-            renderShiftList();
-            renderTable();
-        }
-
-        function renderShiftList() {
-            const container = document.getElementById('shift-list-container');
-            let html = '';
-            shifts.forEach(s => {
-                html += `<span class="bg-indigo-50 border border-indigo-200 text-indigo-700 px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 shadow-sm">
-                    <span>📌 ${s}</span>
-                    ${s !== '休' ? `<button onclick="removeShift('${s}')" class="font-bold ml-1 hover:text-black">×</button>` : ''}
-                </span>`;
-            });
-            container.innerHTML = html;
-        }
-
         async function loadSchedulesFromCloud() {
             const monthKey = document.getElementById('month-select').value;
             const { data } = await _supabase.from('schedules').select('*').eq('month_key', monthKey);
@@ -313,6 +364,8 @@
                 return;
             }
 
+            const allShiftNames = getAllShiftNames();
+
             let html = '';
             html += '<thead><tr class="bg-slate-100 border-b border-slate-200 text-xs text-slate-600 uppercase tracking-wider">';
             html += '<th class="p-3 sticky left-0 bg-slate-100 z-10 w-32 text-center">员工姓名</th>';
@@ -352,12 +405,12 @@
                                 <select onchange="handleShiftChange('${emp}', '${dateStr}', this.value)" class="w-full text-center border rounded p-1 text-xs bg-transparent border-slate-200 focus:ring-2 focus:ring-indigo-500">
                                     <option value="" ${displayShift === '' ? 'selected' : ''}>-</option>`;
 
-                            shifts.forEach(s => {
+                            allShiftNames.forEach(s => {
                                 const selected = (displayShift === s) ? 'selected' : '';
                                 html += `<option value="${s}" ${selected}>${s}</option>`;
                             });
 
-                            if (displayShift && !shifts.includes(displayShift)) {
+                            if (displayShift && !allShiftNames.includes(displayShift)) {
                                 html += `<option value="${displayShift}" selected>${displayShift}</option>`;
                             }
 
@@ -469,6 +522,7 @@
             document.getElementById('modal-container').classList.add('hidden');
         }
 
+        // ===== 云端假表抓取 =====
         async function importCloudLeaves() {
             const rawUrl = document.getElementById('cloud-sheet-url').value.trim();
             if (!rawUrl) { alert('请先贴上云端假表连结！'); return; }
@@ -505,8 +559,6 @@
                     return result.map(s => s.trim().replace(/^["']|["']$/g, ''));
                 });
 
-                console.log('【Google 试算表原始资料】', rows);
-
                 const monthKey = document.getElementById('month-select').value;
                 const [year, month] = monthKey.split('-').map(Number);
                 const daysInMonth = new Date(year, month, 0).getDate();
@@ -534,7 +586,6 @@
 
                     if (dayCells.length >= 25) {
                         dayCells.forEach(({ cIdx, num }) => { dayColMap[cIdx] = num; });
-                        console.log(`✅ 找到日期表头行：第 ${r + 1} 列，共 ${dayCells.length} 栏`);
                         break;
                     }
                 }
@@ -556,7 +607,7 @@
                         if (!norm) return;
                         if (empNormMap[norm] && !empRowMap[rIdx]) {
                             empRowMap[rIdx] = empNormMap[norm];
-                            debugFoundRows.push(`第 ${rIdx + 1} 行 → [${empNormMap[norm]}] (原格内容: ${cell})`);
+                            debugFoundRows.push(`第 ${rIdx + 1} 行 → [${empNormMap[norm]}]`);
                         }
                     });
                 });
@@ -582,17 +633,12 @@
                 });
 
                 if (batchData.length === 0) {
-                    const debugInfo = [
+                    showModal('⚠️ 假表汇入除错诊断', [
                         `❌ <strong>未侦测到匹配的休假座标！</strong>`,
                         `📋 <strong>系统已登记员工：</strong> ${employees.join(', ')}`,
                         `🔍 <strong>试算表侦测到的员工列：</strong><br>${debugFoundRows.length ? debugFoundRows.join('<br>') : '无'}`,
-                        `📅 <strong>侦测到的日期栏位：</strong> ${Object.values(dayColMap).join(', ') || '无'}`,
-                        `💡 <strong>排查建议：</strong>`,
-                        `1. 确认 Google 试算表的员工姓名与网页一致（可含括号、空白差异）。`,
-                        `2. 确认休假格子填的是数字 <strong>1</strong>。`,
-                        `3. 确认日期列（1~31）在试算表前 10 行内。`
-                    ];
-                    showModal('⚠️ 假表汇入除错诊断', debugInfo);
+                        `📅 <strong>侦测到的日期栏位：</strong> ${Object.values(dayColMap).join(', ') || '无'}`
+                    ]);
                     updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
                     return;
                 }
@@ -603,29 +649,24 @@
                 });
                 const dedupData = Array.from(dedupMap.values());
 
-                console.log(`去重前: ${batchData.length} 笔，去重后: ${dedupData.length} 笔`);
-
                 const { error } = await _supabase.from('schedules').upsert(dedupData, { onConflict: 'employee,date_str' });
                 if (error) { alert('写入假表失败: ' + error.message); return; }
 
                 await loadSchedulesFromCloud();
                 renderTable();
                 updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-                alert(`🎉 成功抓取云端假表！共汇入 ${dedupData.length} 笔休假。\n（连结已记住，下次打开会自动填入）`);
+                alert(`🎉 成功抓取云端假表！共汇入 ${dedupData.length} 笔休假。`);
 
             } catch (err) {
                 alert('抓取失败: ' + err.message);
-                showModal('❌ 抓取错误', [
-                    `错误讯息：${err.message}`,
-                    `可能原因：1. 试算表未公开。2. 浏览器 CORS 限制。3. 连结格式错误。`
-                ]);
                 updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
             }
         }
 
+        // ===== 智能排班（按人数套用组合 + 轮流） =====
         async function autoSchedule() {
             if (employees.length === 0) { alert('请先添加至少一位员工！'); return; }
-            if (shifts.length <= 1) { alert('请先添加岗位！'); return; }
+            if (combos.length === 0) { alert('请先新增至少一组「每日岗位组合」！'); return; }
             if (!confirm('确定要执行一键智能排班吗？\n（已导入的固定休假将会保留，不会被覆盖）')) return;
 
             const monthKey = document.getElementById('month-select').value;
@@ -638,20 +679,59 @@
             updateSyncStatus('排班运算中...', 'bg-amber-500 text-white');
 
             let batchData = [];
-            const availableShifts = shifts.filter(s => s !== '休');
+            const warnings = [];
 
-            employees.forEach((emp, index) => {
-                for (let d = 1; d <= daysInMonth; d++) {
-                    const dayStr = String(d).padStart(2, '0');
-                    const dateStr = `${monthKey}-${dayStr}`;
+            // 逐日排班
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dayStr = String(d).padStart(2, '0');
+                const dateStr = `${monthKey}-${dayStr}`;
+
+                // 1. 找出当天上班的员工（没休的）
+                const workingEmps = employees.filter(emp => {
                     const key = `${emp}_${dateStr}`;
+                    return !isFixedRest(currentSchedules[key]);
+                });
 
-                    if (isFixedRest(currentSchedules[key])) continue;
+                if (workingEmps.length === 0) continue;  // 全休，跳过
 
-                    const assignedShift = availableShifts[(d + index) % availableShifts.length];
-                    batchData.push({ month_key: monthKey, employee: emp, date_str: dateStr, shift: assignedShift });
+                // 2. 找最接近的岗位组合
+                const combo = findClosestCombo(workingEmps.length);
+                if (!combo) continue;
+
+                // 3. 分配岗位（按日期偏移轮流）
+                //    offset = 日期 - 1，让每天岗位往前推一位
+                const offset = (d - 1) % combo.shifts.length;
+                const shiftList = combo.shifts;
+
+                workingEmps.forEach((emp, idx) => {
+                    let shift;
+                    if (idx < shiftList.length) {
+                        // 用 offset 轮流拿岗位
+                        const shiftIdx = (idx + offset) % shiftList.length;
+                        shift = shiftList[shiftIdx];
+                    } else {
+                        // 人数超过组合岗位数 → 多的给「支援」
+                        shift = '支援';
+                    }
+                    batchData.push({
+                        month_key: monthKey,
+                        employee: emp,
+                        date_str: dateStr,
+                        shift: shift
+                    });
+                });
+
+                // 记录人数与组合不匹配的警告
+                if (workingEmps.length !== combo.headcount) {
+                    warnings.push(`${month}月${d}日：上班 ${workingEmps.length} 人，套用最接近的「${combo.headcount} 人」组合`);
                 }
-            });
+            }
+
+            if (batchData.length === 0) {
+                alert('没有任何可排班的资料（可能全部都是休假）。');
+                updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+                return;
+            }
 
             const dedupMap = new Map();
             batchData.forEach(item => {
@@ -665,7 +745,13 @@
             await loadSchedulesFromCloud();
             renderTable();
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-            alert('一键智能排班完成！\n（已保留所有固定休假）');
+
+            let msg = `一键智能排班完成！\n共排了 ${dedupData.length} 笔。\n（已保留所有固定休假）`;
+            if (warnings.length > 0) {
+                msg += `\n\n⚠️ 有 ${warnings.length} 天人数与组合不完全符合：\n` + warnings.slice(0, 10).join('\n');
+                if (warnings.length > 10) msg += `\n...还有 ${warnings.length - 10} 天`;
+            }
+            alert(msg);
         }
 
         async function clearMonthLeaves() {
@@ -673,7 +759,6 @@
             const monthKey = document.getElementById('month-select').value;
             updateSyncStatus('清空中...', 'bg-rose-500 text-white');
 
-            await _supabase.from('schedules').delete().eq('month_key', monthKey).eq('shift', '休(固定)');
             const { error } = await _supabase.from('schedules').delete().eq('month_key', monthKey).eq('shift', '休');
             if (error) { alert('清空失败: ' + error.message); return; }
 
