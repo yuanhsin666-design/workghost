@@ -125,11 +125,39 @@
         let currentSchedules = {};
         let isEditMode = false;
 
+        // ===== 设定存取（存到 Supabase，跨装置共用） =====
+        const CLOUD_URL_KEY = 'cloud_sheet_url';
+
+        async function saveCloudUrl(url) {
+            const { error } = await _supabase.from('settings').upsert(
+                { key: CLOUD_URL_KEY, value: url, updated_at: new Date().toISOString() },
+                { onConflict: 'key' }
+            );
+            if (error) console.error('储存云端假表连结失败:', error);
+        }
+
+        async function loadCloudUrl() {
+            const { data, error } = await _supabase
+                .from('settings')
+                .select('value')
+                .eq('key', CLOUD_URL_KEY)
+                .maybeSingle();
+            if (error) { console.error('读取云端假表连结失败:', error); return ''; }
+            return data ? data.value : '';
+        }
+
         async function init() {
             updateSyncStatus('连线中...', 'bg-amber-500 text-white');
             await loadEmployees();
             loadShiftsLocal();
             await loadSchedulesFromCloud();
+
+            const savedUrl = await loadCloudUrl();
+            if (savedUrl) {
+                document.getElementById('cloud-sheet-url').value = savedUrl;
+                console.log('✅ 已从云端还原假表连结:', savedUrl);
+            }
+
             renderEmployeeSelect();
             renderShiftList();
             renderTable();
@@ -263,7 +291,6 @@
             renderTable();
         }
 
-        // 判断是否为「固定休假」
         function isFixedRest(shift) {
             return shift === '休' || shift === '休(固定)' || shift === '休(固定假)';
         }
@@ -303,16 +330,13 @@
                     const displayShift = isRest ? '休' : rawShift;
 
                     if (!isEditMode) {
-                        // 检视模式：只显示
                         let badgeClass = 'text-slate-400';
                         if (isRest) badgeClass = 'bg-rose-100 text-rose-700 font-bold px-1.5 py-0.5 rounded text-xs';
                         else if (displayShift) badgeClass = 'bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-xs font-medium';
 
                         html += `<td class="p-2 text-center"><span class="${badgeClass}">${displayShift || '-'}</span></td>`;
                     } else {
-                        // 手动修改模式
                         if (isRest) {
-                            // 🔒 固定休假 → 锁死不可改
                             html += `<td class="p-1 text-center">
                                 <span class="inline-block w-full bg-rose-100 text-rose-700 font-bold border border-rose-300 rounded p-1 text-xs cursor-not-allowed" title="固定休假，不可修改">
                                     🔒 休
@@ -346,7 +370,6 @@
             const key = `${employee}_${dateStr}`;
             const existing = currentSchedules[key];
 
-            // 🔒 防呆：固定休假不允许被改成其他岗位
             if (isFixedRest(existing) && shift !== '休' && shift !== '休(固定)' && shift !== '') {
                 alert('此为公司固定休假，不可改为其他岗位。\n如需修改，请先清除当月休假后重新导入。');
                 renderTable();
@@ -441,11 +464,12 @@
             document.getElementById('modal-container').classList.add('hidden');
         }
 
-        // 智慧解析云端假表
         async function importCloudLeaves() {
             const rawUrl = document.getElementById('cloud-sheet-url').value.trim();
             if (!rawUrl) { alert('请先贴上云端假表连结！'); return; }
             if (employees.length === 0) { alert('请先在上方「员工管理」添加员工名单！'); return; }
+
+            await saveCloudUrl(rawUrl);
 
             let csvUrl = rawUrl;
             const idMatch = rawUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
@@ -490,10 +514,7 @@
                 const empNormMap = {};
                 employees.forEach(e => { empNormMap[normalize(e)] = e; });
 
-                // 寻找日期栏位
                 const dayColMap = {};
-                let headerRowIdx = -1;
-
                 for (let r = 0; r < Math.min(rows.length, 10); r++) {
                     const row = rows[r];
                     const dayCells = [];
@@ -507,10 +528,7 @@
                     });
 
                     if (dayCells.length >= 25) {
-                        headerRowIdx = r;
-                        dayCells.forEach(({ cIdx, num }) => {
-                            dayColMap[cIdx] = num;
-                        });
+                        dayCells.forEach(({ cIdx, num }) => { dayColMap[cIdx] = num; });
                         console.log(`✅ 找到日期表头行：第 ${r + 1} 列，共 ${dayCells.length} 栏`);
                         break;
                     }
@@ -525,7 +543,6 @@
                     return;
                 }
 
-                // 寻找员工列
                 const empRowMap = {};
                 const debugFoundRows = [];
                 rows.forEach((row, rIdx) => {
@@ -539,7 +556,6 @@
                     });
                 });
 
-                // 组合休假资料
                 const batchData = [];
                 Object.keys(empRowMap).forEach(rIdx => {
                     const empName = empRowMap[rIdx];
@@ -576,7 +592,6 @@
                     return;
                 }
 
-                // 去重
                 const dedupMap = new Map();
                 batchData.forEach(item => {
                     dedupMap.set(`${item.employee}_${item.date_str}`, item);
@@ -591,7 +606,7 @@
                 await loadSchedulesFromCloud();
                 renderTable();
                 updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
-                alert(`🎉 成功抓取云端假表！共汇入 ${dedupData.length} 笔休假。`);
+                alert(`🎉 成功抓取云端假表！共汇入 ${dedupData.length} 笔休假。\n（连结已记住，下次打开会自动填入）`);
 
             } catch (err) {
                 alert('抓取失败: ' + err.message);
@@ -612,7 +627,6 @@
             const [year, month] = monthKey.split('-').map(Number);
             const daysInMonth = new Date(year, month, 0).getDate();
 
-            // 🔒 排班前先重读云端，确保休假资料最新
             updateSyncStatus('读取最新休假中...', 'bg-amber-500 text-white');
             await loadSchedulesFromCloud();
 
@@ -627,7 +641,6 @@
                     const dateStr = `${monthKey}-${dayStr}`;
                     const key = `${emp}_${dateStr}`;
 
-                    // 🔒 保护：固定休假一律跳过
                     if (isFixedRest(currentSchedules[key])) continue;
 
                     const assignedShift = availableShifts[(d + index) % availableShifts.length];
@@ -635,7 +648,6 @@
                 }
             });
 
-            // 去重，避免 ON CONFLICT 错误
             const dedupMap = new Map();
             batchData.forEach(item => {
                 dedupMap.set(`${item.employee}_${item.date_str}`, item);
@@ -685,35 +697,6 @@
             renderTable();
         });
 
-        // 💾 记住云端假表连结
-        const CLOUD_URL_KEY = 'workghost_cloud_sheet_url_v1';
-
-        // 页面载入时，自动填入上次的网址
-        function restoreCloudUrl() {
-            const saved = localStorage.getItem(CLOUD_URL_KEY);
-            if (saved) {
-                document.getElementById('cloud-sheet-url').value = saved;
-                console.log('✅ 已还原上次的云端假表连结');
-            }
-        }
-
-        // 输入框有变动就自动存
-        document.getElementById('cloud-sheet-url').addEventListener('input', (e) => {
-            const val = e.target.value.trim();
-            if (val) {
-                localStorage.setItem(CLOUD_URL_KEY, val);
-            } else {
-                localStorage.removeItem(CLOUD_URL_KEY);
-            }
-        });
-
-        // 点「抓取」或「清空休假」时也顺手存一次（保险）
-        document.querySelector('button[onclick="importCloudLeaves()"]').addEventListener('click', () => {
-            const val = document.getElementById('cloud-sheet-url').value.trim();
-            if (val) localStorage.setItem(CLOUD_URL_KEY, val);
-        });
-
-        restoreCloudUrl();
         init();
     </script>
 </body>
