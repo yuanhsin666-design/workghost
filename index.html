@@ -69,7 +69,19 @@
                 </div>
                 <div id="shift-list-container" class="flex flex-wrap gap-2 pt-2"></div>
             </div>
-
+            <!-- 每日岗位组合设定 -->
+            <div class="space-y-3 border-t border-slate-100 pt-6">
+                <label class="block font-bold text-slate-700 text-sm">📋 每日岗位组合设定（依当天上班人数自动套用）：</label>
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <input type="number" id="combo-headcount" placeholder="人数" min="1" max="50" class="w-24 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <input type="text" id="combo-shifts" placeholder="岗位（用逗号分隔），例如：AI,BUG,彩票,外接,团队" class="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <button onclick="saveCombo()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-xl text-sm font-medium transition whitespace-nowrap">新增 / 更新组合</button>
+                </div>
+                <div id="combo-list-container" class="space-y-2 pt-2">
+                    <!-- 动态生成组合列表 -->
+                </div>
+                <p class="text-xs text-slate-400">💡 排班时：当天上班人数 → 找最接近的组合 → 按日期轮流分配。人数超过组合时，多出的给「支援」。</p>
+            </div>
             <div class="flex flex-wrap gap-3 pt-2 items-center">
                 <button onclick="autoSchedule()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition shadow-sm">
                     ✨ 执行智能排班
