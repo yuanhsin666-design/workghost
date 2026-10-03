@@ -1019,13 +1019,12 @@
             alert('当月休假已清空！');
         }
 
-        async function clearMonthData() {
-            if (!confirm('确定重置当月排班吗？\n（会清空所有排好的岗位，但保留导入的休假和锁定）')) return;
+                async function clearMonthData() {
+            if (!confirm('确定重置当月资料吗？\n（会清空排班岗位，但保留导入的休假与锁定）')) return;
             const monthKey = document.getElementById('month-select').value;
             updateSyncStatus('清空中...', 'bg-rose-500 text-white');
 
-            // 只删「非休」的班，保留休
-            // Supabase 没有直接「不等于」的 delete，得用 not
+            // 只删「非休」的排班；休假保留
             const { error } = await _supabase.from('schedules')
                 .delete()
                 .eq('month_key', monthKey)
@@ -1033,7 +1032,8 @@
 
             if (error) { alert('清空失败: ' + error.message); return; }
 
-            // 重新载入
+            // locked_cells 表完全不动 → 锁定保留
+
             await loadSchedulesFromCloud();
             await loadLockedCells();
             renderTable();
