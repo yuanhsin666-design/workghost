@@ -333,7 +333,48 @@
             updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
             alert(`已锁定 ${dedupData.length} 格！`);
         }
+        // 点日期表头：切换那天全部锁定/解锁
+        async function toggleLockDay(dateStr) {
+            if (employees.length === 0) { alert('请先添加员工！'); return; }
 
+            // 检查这天是否「全锁」
+            const lockedCount = employees.filter(emp => isLocked(emp, dateStr)).length;
+            const total = employees.length;
+            const allLocked = (lockedCount === total);
+
+            if (allLocked) {
+                // 全锁 → 解开那天全部
+                if (!confirm(`确定解锁 ${dateStr} 这天所有员工的锁定吗？`)) return;
+                updateSyncStatus('解锁中...', 'bg-amber-500 text-white');
+
+                const { error } = await _supabase.from('locked_cells')
+                    .delete().eq('date_str', dateStr);
+                if (error) { alert('解锁失败: ' + error.message); return; }
+
+                await loadLockedCells();
+                renderTable();
+                updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+            } else {
+                // 没全锁 → 锁全部
+                if (!confirm(`确定锁定 ${dateStr} 这天全部 ${total} 位员工吗？`)) return;
+                updateSyncStatus('锁定中...', 'bg-amber-500 text-white');
+
+                const monthKey = document.getElementById('month-select').value;
+                const batch = employees.map(emp => ({
+                    month_key: monthKey,
+                    employee: emp,
+                    date_str: dateStr,
+                    reason: 'day_lock'
+                }));
+
+                const { error } = await _supabase.from('locked_cells').upsert(batch, { onConflict: 'employee,date_str' });
+                if (error) { alert('锁定失败: ' + error.message); return; }
+
+                await loadLockedCells();
+                renderTable();
+                updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+            }
+        }
         async function unlockAllMonth() {
             if (!confirm('确定解锁本月所有格子？')) return;
             const monthKey = document.getElementById('month-select').value;
@@ -505,8 +546,20 @@
             let html = '';
             html += '<thead><tr class="bg-slate-100 border-b border-slate-200 text-xs text-slate-600 uppercase tracking-wider">';
             html += '<th class="p-3 sticky left-0 bg-slate-100 z-10 w-32 text-center">员工姓名</th>';
-            for (let d = 1; d <= daysInMonth; d++) {
-                html += `<th class="p-2 text-center min-w-[55px]">${d}日</th>`;
+                        for (let d = 1; d <= daysInMonth; d++) {
+                const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
+                // 统计这天锁了几格
+                const lockedCount = employees.filter(emp => isLocked(emp, dateStr)).length;
+                const total = employees.length;
+                let lockMark = '';
+                if (total > 0 && lockedCount === total) lockMark = '🔒 ';
+                else if (lockedCount > 0) lockMark = '🔐 ';
+
+                html += `<th class="p-2 text-center min-w-[55px] cursor-pointer hover:bg-indigo-100 select-none" 
+                    onclick="toggleLockDay('${dateStr}')" 
+                    title="点击切换：锁定/解锁这天的所有员工">
+                    ${lockMark}${d}日
+                </th>`;
             }
             html += '</tr></thead>';
 
