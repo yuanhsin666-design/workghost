@@ -1081,10 +1081,13 @@
             return count;
         }
         
-        async function autoSchedule() {
+                async function autoSchedule() {
             if (employees.length === 0) { alert('请先添加员工！'); return; }
             if (combos.length === 0) { alert('请先新增岗位组合！'); return; }
-            if (!confirm('确定执行智能排班？\n（固定休假与锁定格将会跳过）')) return;
+            if (!confirm('确定执行智能排班？\n（固定休假与锁定格将会跳过）\n（每次结果会略有不同）')) return;
+
+            // 每次排班都换一个随机种子
+            const rng = Math.random;
 
             const monthKey = document.getElementById('month-select').value;
             const [year, month] = monthKey.split('-').map(Number);
