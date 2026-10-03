@@ -1132,13 +1132,17 @@
                 const todayPickCount = {};
                 shiftPool.forEach(s => { todayPickCount[s] = 0; });
 
-                         // ⭐ 轮换优先顺序：每天把员工顺序往后推一位
-                //    day 1：原顺序；day 2：往后推 1；day 3：往后推 2 ...
+                // ⭐ 轮换优先顺序 + 随机打乱
                 const offsetEmp = (d - 1) % workingEmps.length;
                 const empSorted = [
                     ...workingEmps.slice(offsetEmp),
                     ...workingEmps.slice(0, offsetEmp)
                 ];
+                // 打乱顺序，让每次结果不同
+                for (let i = empSorted.length - 1; i > 0; i--) {
+                    const j = Math.floor(rng() * (i + 1));
+                    [empSorted[i], empSorted[j]] = [empSorted[j], empSorted[i]];
+                }
 
                               empSorted.forEach(emp => {
                     const recentShifts = getRecentShifts(emp, d, monthKey, simSchedules, 2);
@@ -1168,15 +1172,10 @@
                         scores[s] = empCount * 10 + recentPenalty + consecPenalty;
                     });
 
-                    // 挑分数最低的
-                    let pick = availablePool[0];
-                    let minScore = Infinity;
-                    availablePool.forEach(s => {
-                        if (scores[s] < minScore) {
-                            minScore = scores[s];
-                            pick = s;
-                        }
-                    });
+                    // 挑分数最低的（同分随机挑）
+                    const minScore = Math.min(...availablePool.map(s => scores[s]));
+                    const bestCandidates = availablePool.filter(s => scores[s] === minScore);
+                    const pick = bestCandidates[Math.floor(rng() * bestCandidates.length)];
                 
                     // 更新模拟排班
                     simSchedules[`${emp}_${dateStr}`] = pick;
