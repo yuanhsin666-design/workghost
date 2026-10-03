@@ -944,12 +944,21 @@
 
             updateSyncStatus('排班运算中...', 'bg-amber-500 text-white');
 
+            // 模拟用：先复制一份当前排班
+            const simSchedules = {};
+            Object.keys(currentSchedules).forEach(k => { simSchedules[k] = currentSchedules[k]; });
+
+            // 员工历史：连续做过几天同岗位（初始从 1 开始）
+            const consecutiveCount = {};
+            employees.forEach(emp => { consecutiveCount[emp] = {}; });
+
             let batchData = [];
             const warnings = [];
 
             for (let d = 1; d <= daysInMonth; d++) {
                 const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
 
+                // 找出当天上班员工（没休 且 没锁）
                 const workingEmps = employees.filter(emp => {
                     const key = `${emp}_${dateStr}`;
                     if (isFixedRest(currentSchedules[key])) return false;
@@ -962,15 +971,68 @@
                 const combo = findClosestCombo(workingEmps.length);
                 if (!combo) continue;
 
-                const offset = (d - 1) % combo.shifts.length;
-                workingEmps.forEach((emp, idx) => {
-                    if (idx >= combo.shifts.length) return;
-                    const shift = combo.shifts[(idx + offset) % combo.shifts.length];
+                const shiftPool = combo.shifts;
+
+                // 记录本日已被选的岗位次数（均匀用）
+                const todayPickCount = {};
+                shiftPool.forEach(s => { todayPickCount[s] = 0; });
+
+                // 排序：连续做同岗位最久的先挑（让他们优先避开）
+                const empSorted = [...workingEmps].sort((a, b) => {
+                    const aLast = getLastShift(a, d, monthKey, simSchedules);
+                    const bLast = getLastShift(b, d, monthKey, simSchedules);
+                    const aMax = aLast ? (consecutiveCount[a]?.[aLast] || 0) : 0;
+                    const bMax = bLast ? (consecutiveCount[b]?.[bLast] || 0) : 0;
+                    return bMax - aMax;
+                });
+
+                empSorted.forEach(emp => {
+                    const recentShifts = getRecentShifts(emp, d, monthKey, simSchedules, 2);
+
+                    // 1. 优先：不在最近 2 天的岗位
+                    let candidates = shiftPool.filter(s => !recentShifts.includes(s));
+
+                    // 2. 次选：候选为空 → 用全部
+                    if (candidates.length === 0) {
+                        candidates = [...shiftPool];
+                    }
+
+                    // 3. 均匀：选「今天被选次数最少」的
+                    let minCount = Infinity;
+                    candidates.forEach(s => {
+                        if (todayPickCount[s] < minCount) minCount = todayPickCount[s];
+                    });
+                    const leastPicked = candidates.filter(s => todayPickCount[s] === minCount);
+
+                    // 4. 破平手：选「连续天数最少」的
+                    let minConsec = Infinity;
+                    let pick = leastPicked[0];
+                    leastPicked.forEach(s => {
+                        const cc = consecutiveCount[emp]?.[s] || 0;
+                        if (cc < minConsec) { minConsec = cc; pick = s; }
+                    });
+
+                    // 更新模拟排班
+                    simSchedules[`${emp}_${dateStr}`] = pick;
+                    todayPickCount[pick] = (todayPickCount[pick] || 0) + 1;
+
+                    // 更新连续计数
+                    const lastShift = getLastShift(emp, d, monthKey, simSchedules);
+                    if (!consecutiveCount[emp]) consecutiveCount[emp] = {};
+                    Object.keys(consecutiveCount[emp]).forEach(s => {
+                        if (s !== pick) consecutiveCount[emp][s] = 0;
+                    });
+                    if (lastShift === pick) {
+                        consecutiveCount[emp][pick] = (consecutiveCount[emp][pick] || 0) + 1;
+                    } else {
+                        consecutiveCount[emp][pick] = 1;
+                    }
+
                     batchData.push({
                         month_key: monthKey,
                         employee: emp,
                         date_str: dateStr,
-                        shift: shift
+                        shift: pick
                     });
                 });
 
@@ -1002,6 +1064,34 @@
                 if (warnings.length > 10) msg += `\n...还有 ${warnings.length - 10} 天`;
             }
             alert(msg);
+        }
+
+        // 辅助：读「某员工某天的上一个岗位」（跳过休假日）
+        function getLastShift(emp, d, monthKey, simSchedules) {
+            for (let back = 1; back <= 7; back++) {
+                const pd = d - back;
+                if (pd < 1) return null;
+                const ds = `${monthKey}-${String(pd).padStart(2, '0')}`;
+                const s = simSchedules[`${emp}_${ds}`] || '';
+                if (isFixedRest(s)) continue;
+                if (s) return s;
+            }
+            return null;
+        }
+
+        // 辅助：读「某员工最近 N 天做过的岗位」（去重，跳过休）
+        function getRecentShifts(emp, d, monthKey, simSchedules, n) {
+            const result = [];
+            for (let back = 1; back <= n; back++) {
+                const pd = d - back;
+                if (pd < 1) continue;
+                const ds = `${monthKey}-${String(pd).padStart(2, '0')}`;
+                const s = simSchedules[`${emp}_${ds}`] || '';
+                if (isFixedRest(s)) continue;
+                if (s && !result.includes(s)) result.push(s);
+            }
+            return result;
+        }
         }
 
                 async function clearMonthLeaves() {
