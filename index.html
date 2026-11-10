@@ -31,7 +31,7 @@
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-center border-b border-slate-100 pb-6">
                 <div>
                     <label class="block font-bold text-slate-700 text-sm mb-1">📅 选择排班月份：</label>
-                    <input type="month" id="month-select" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" value="2026-10">
+                    <input type="month" id="month-select" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 </div>
 
                 <div class="md:col-span-2">
@@ -529,6 +529,9 @@
         }
 
         async function init() {
+            // 自动设为当前真实月份
+const now = new Date();
+document.getElementById('month-select').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
             updateSyncStatus('连线中...', 'bg-amber-500 text-white');
             await loadEmployees();
             await loadCombos();
