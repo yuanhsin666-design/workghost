@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>抓鬼排班-早</title>
@@ -61,6 +62,14 @@
                 <p class="text-xs text-slate-400">💡 提示：请确保 Google 试算表已设为「知道连结的人都能检视」，且员工姓名与上方列表相符，休假格填入 **1**。</p>
             </div>
 
+            <div class="space-y-2 border-b border-slate-100 pb-6 mt-4">
+    <label class="block font-bold text-slate-700 text-sm">📁 导入 ONLYOFFICE / 本地 Excel 假表：</label>
+    <div class="flex flex-col sm:flex-row gap-3">
+        <input type="file" id="local-excel-input" accept=".csv, .xlsx" onchange="importLocalLeaves(this)" 
+            class="flex-1 border border-slate-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+    </div>
+    <p class="text-xs text-slate-400">💡 提示：请在 ONLYOFFICE 将表格「另存为」CSV 或 Excel 文件，然后从这里上传。</p>
+</div>
             <div class="space-y-3 border-t border-slate-100 pt-6">
                 <label class="block font-bold text-slate-700 text-sm">📋 每日岗位组合设定（依当天上班人数自动套用）：</label>
                 <div class="flex flex-col sm:flex-row gap-3">
@@ -1428,6 +1437,117 @@
             renderStats();
         });
 
+        async function importLocalLeaves(input) {
+    const file = input.files[0];
+    if (!file) return;
+    if (employees.length === 0) { alert('请先添加员工！'); return; }
+
+    updateSyncStatus('读取本地假表中...', 'bg-amber-500 text-white');
+
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            // 将 Excel/CSV 转为二维数组
+            const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+            const monthKey = document.getElementById('month-select').value;
+            const [year, month] = monthKey.split('-').map(Number);
+            const daysInMonth = new Date(year, month, 0).getDate();
+
+            const normalize = (s) => String(s || '').replace(/[\s\u3000]/g, '').replace(/[()（）\[\]【】]/g, '').toLowerCase();
+            const empNormMap = {};
+            employees.forEach(e => { empNormMap[normalize(e)] = e; });
+
+            // 1. 抓日期表头
+            const dayColMap = {};
+            for (let r = 0; r < Math.min(rows.length, 10); r++) {
+                const row = rows[r];
+                const dayCells = [];
+                row.forEach((cell, cIdx) => {
+                    if (!cell) return;
+                    const clean = String(cell).replace(/[日号號\s]/g, '').trim();
+                    const num = parseInt(clean, 10);
+                    if (!isNaN(num) && num >= 1 && num <= 31 && String(num) === clean) {
+                        dayCells.push({ cIdx, num });
+                    }
+                });
+                if (dayCells.length >= 25) {
+                    dayCells.forEach(({ cIdx, num }) => { dayColMap[cIdx] = num; });
+                    break;
+                }
+            }
+
+            if (Object.keys(dayColMap).length === 0) {
+                alert('❌ 找不到日期表头，请确认表格上方有 1~31 的数字。');
+                updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+                return;
+            }
+
+            // 2. 抓员工与休假
+            const empRowMap = {};
+            rows.forEach((row, rIdx) => {
+                row.forEach((cell) => {
+                    const norm = normalize(cell);
+                    if (!norm) return;
+                    if (empNormMap[norm] && !empRowMap[rIdx]) {
+                        empRowMap[rIdx] = empNormMap[norm];
+                    }
+                });
+            });
+
+            const batchData = [];
+            Object.keys(empRowMap).forEach(rIdx => {
+                const empName = empRowMap[rIdx];
+                const rowData = rows[rIdx] || [];
+                Object.keys(dayColMap).forEach(cIdx => {
+                    const dayNum = dayColMap[cIdx];
+                    if (dayNum < 1 || dayNum > daysInMonth) return;
+                    const val = (rowData[cIdx] || '').toString().trim();
+                    // 判断是否为休假（填1或休）
+                    if (val === '1' || val === '１' || val.toLowerCase() === 'true' || val === '休') {
+                        batchData.push({
+                            month_key: monthKey,
+                            employee: empName,
+                            date_str: `${monthKey}-${String(dayNum).padStart(2, '0')}`,
+                            shift: '休'
+                        });
+                    }
+                });
+            });
+
+            if (batchData.length === 0) {
+                alert('⚠️ 未侦测到休假，请确认员工姓名一致，且休假格填 1。');
+                updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+                return;
+            }
+
+            // 3. 存入云端
+            const dedupMap = new Map();
+            batchData.forEach(item => dedupMap.set(`${item.employee}_${item.date_str}`, item));
+            const dedupData = Array.from(dedupMap.values());
+
+            const { error } = await _supabase.from('schedules').upsert(dedupData, { onConflict: 'employee,date_str' });
+            if (error) { alert('写入失败: ' + error.message); return; }
+
+            await loadSchedulesFromCloud();
+            renderTable();
+            renderStats();
+            updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+            alert(`🎉 成功汇入 ${dedupData.length} 笔休假。`);
+
+        } catch (err) {
+            alert('解析失败: ' + err.message);
+            updateSyncStatus('已同步云端', 'bg-emerald-500 text-white');
+        } finally {
+            // 清空 input，让同一个文件可以重复上传
+            input.value = '';
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
         init();
     </script>
 </body>
